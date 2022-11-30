@@ -5,23 +5,40 @@ import numpy as np
 from attrdict import AttrDict
 from matplotlib import pyplot as plt
 from . import utils
-from . import laser
+from .laser import Laser
 # import ipdb; ipdb.set_trace()
 
 
 class Simulator():
     def __init__(self):
+
         params = {
             "A": np.eye(3),
-            "n_spot": 7,
-            "n_ring": 100,
-            "base_motion": range(0, 4000, 10),
+            "S1": self.get_default_laser_spot1(),
+            "S2": self.get_default_laser_spot2(),
+            "R": self.get_default_laser_ring(),
             "cylinder_radius": 2500,
-            "spotlaser_offset": [50, 50, 1000],
-            "ringlaser_offset": [0, 0, 1500],
+            "base_motion": np.array([
+                [[1, 0, 0, 0],
+                 [0, 1, 0, 0],
+                 [0, 0, 1, 10*i],
+                 [0, 0, 0, 1]] for i in range(100)
+            ]),
+            "spotlaser_offset": np.array([
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 1, 1000],
+                [0, 0, 0, 1]
+            ]),
+            "ringlaser_offset": np.array([
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 1, 1500],
+                [0, 0, 0, 1]
+            ]),
             "is_ring_with_camera": True,
-            "camera_loop": range(6),
-            "spot_loop": range(250, 300, 5),
+            "idx_length": 100,
+            "idx_period": 5,
             "round_threshold": 0.00001,
             "is_bundle": False,
             "is_5points_true": False,
@@ -33,73 +50,78 @@ class Simulator():
         for key in params:
             setattr(self, key, params[key])
 
-    def set_spotlaser(self):
-        # spot laser parameter
-        n = self.n_spot
-        origin = np.zeros((3, n))
-        direction = np.zeros((3, n))
-        for i in range(n-1):
-            direction[:, i] = [np.cos(i*np.pi/n*2), np.sin(i*np.pi/n*2), 1]
-        origin[:, -1] = self.spotlaser_offset
-        direction[:, -1] = [1, 0, 0]
-        params = AttrDict({"radius": self.cylinder_radius})
-        S = laser.Laser(origin, direction, params)  # spot laser instance
-        S.dataset_generate(self.wMs)
-        self.S = S
+    def get_idx(length, period):
+        camera_idx = []
+        spot_idx = []
+        for i in length:
+            for j in period:
+                camera_idx.append(i+j)
+                spot_idx.append(i)
 
-    def set_ringlaser(self):
-        # ring laser parameter
-        n = self.n_ring
-        origin = np.zeros((3, n))
-        direction = np.zeros((3, n))
-        for i in range(n):
-            direction[:, i] = [np.cos(i*np.pi/n*2), np.sin(i*np.pi/n*2), 0]
-        params = AttrDict({"radius": self.cylinder_radius})
-        R = laser.Laser(origin, direction, params)  # ring laser instance
-        R.dataset_generate(self.wMr)
+    def get_default_laser_spot1(self):
+        # spot laser for posture estimation
+        n = 6
+        origin1 = np.zeros((3, n))
+        direction1 = np.array(
+            [[np.cos(i*np.pi/n*2), np.sin(i*np.pi/n*2), 1] for i in range(n)]).T
+        S1 = Laser(origin1, direction1)
+        return S1
 
-        self.R = R
+    def get_default_laser_spot2(self):
+        # spot laser for scale estimation
+        origin2 = np.array(
+            [[200, 0, 1000]]).T
+        direction2 = np.array(
+            [[1, 1, 0]]).T
+        S2 = Laser(origin2, direction2)
+        return S2
+
+    def get_default_laser_ring(self):
+        # ring laser for structured light
+        m = 100
+        origin3 = np.zeros((3, m))
+        direction3 = np.array(
+            [[np.cos(i*np.pi/m*2), np.sin(i*np.pi/m*2), 0] for i in range(m)]).T
+        R = Laser(origin3, direction3)
+        return R
+
+    def set_rendered_points(self):
+        params = {"radius": self.cylinder_radius}
+        self.S1.dataset_generate(self.wMs, params)
+        self.S2.dataset_generate(self.wMs, params)
+        self.R.dataset_generate(self.wMr, params)
 
     def set_base_motion(self):
         # set pose of camera, spot laser, and ring laser
         m = len(self.base_motion)
-        wMc = np.zeros((m, 4, 4))
-        wMs = np.zeros((m, 4, 4))
-        wMr = np.zeros((m, 4, 4))
-        xMr = np.eye(4)
-        xMr[0:3, 3] = self.ringlaser_offset
+        wMc = self.base_motion
+        wMs = np.array([
+            wMc[i, :, :] @ self.spotlaser_offset for i in range(m)
+        ])
+        wMr = np.array([
+            wMc[i, :, :] @ self.ringlaser_offset for i in range(m)
+        ])
 
-        for i in range(m):
-            wMc[i, :, :] = np.eye(4)
-            wMc[i, 2, 3] = self.base_motion[i]
-            wMs[i, :, :] = np.eye(4)
-            wMs[i, 2, 3] = self.base_motion[i]
-            # M[i,1:3,1:3] = [[np.cos(np.pi*i/n/10), -np.sin(np.pi*i/n/10)],[np.sin(np.pi*i/n/10), np.cos(np.pi*i/n/10)]]
+        if self.is_ring_with_camera:
+            xMr = np.linalg.inv(wMc[0, :, :]) @ wMr[0, :, :]
+        else:
+            xMr = np.linalg.inv(wMs[0, :, :]) @ wMr[0, :, :]
 
-        if self.is_ring_with_camera:  # ring laser fixed to camera
-            for i in range(m):
-                wMr[i, :, :] = wMc[i, :, :] @ xMr
-        else:  # ring laser fixed to spot laser
-            for i in range(m):
-                wMr[i, :, :] = wMs[i, :, :] @ xMr
-
-        self.xMr = xMr  # x = is_ring_with_camera ? camera : spot laser
         self.wMc = wMc
         self.wMs = wMs
         self.wMr = wMr
+        self.xMr = xMr
 
     def set_used_index(self):
         # set way of motion as a whole
-        camera_loop = self.camera_loop
-        spot_loop = self.spot_loop
-        assert camera_loop[-1] == spot_loop[1] - \
-            spot_loop[0], "camera_loop[-1] == spot_loop difference is required"
-
+        length = self.idx_length
+        period = self.idx_period
         idx_c = []
         idx_s = []
-        for i in spot_loop:
-            for j in camera_loop:
-                idx_c.append(i+j-spot_loop[0])
+
+        for i in range(0, length, period):
+            for j in range(period+1):
+                idx_c.append(i+j)
                 idx_s.append(i)
 
         is_camera_moved = []
@@ -134,17 +156,22 @@ class Simulator():
         self.cMs_idx = cMs_idx
 
     def generate_2dpoints(self):  # pick up indexed M, P
-        wP_s_idx = [self.S.P[idx] for idx in self.idx_s]
+        wP_s1_idx = [self.S1.P[idx] for idx in self.idx_s]
+        wP_s2_idx = [self.S2.P[idx] for idx in self.idx_s]
         wP_r_idx = [self.R.P[idx] for idx in self.idx_r]
 
-        UV_s_idx = utils.uv_generate(
-            self.A, self.cMw_idx, wP_s_idx, round_threshold=self.round_threshold)
+        UV_s1_idx = utils.uv_generate(
+            self.A, self.cMw_idx, wP_s1_idx, round_threshold=self.round_threshold)
+        UV_s2_idx = utils.uv_generate(
+            self.A, self.cMw_idx, wP_s2_idx, round_threshold=self.round_threshold)
         UV_r_idx = utils.uv_generate(
             self.A, self.cMw_idx, wP_r_idx, round_threshold=self.round_threshold)
 
-        self.wP_s_idx = wP_s_idx
+        self.wP_s1_idx = wP_s1_idx
+        self.wP_s2_idx = wP_s2_idx
         self.wP_r_idx = wP_r_idx
-        self.UV_s_idx = UV_s_idx
+        self.UV_s1_idx = UV_s1_idx
+        self.UV_s2_idx = UV_s2_idx
         self.UV_r_idx = UV_r_idx
 
     def estimate_pose(self):
@@ -171,21 +198,26 @@ class Simulator():
         self.cMs_est = cMs_est
 
     def estimate_pose_batch(self, i):
-        r = utils.uv2ray(self.A, self.UV_s_idx[i])
-        o = self.S.origin
-        q = self.S.direction
+        # spot laser for posture estimation
+        r1 = utils.uv2ray(self.A, self.UV_s1_idx[i])
+        # spot laser for scale estimation
+        r2 = utils.uv2ray(self.A, self.UV_s2_idx[i])
+        q1 = self.S1.direction
+        q2 = self.S2.direction
+        o1 = self.S1.origin
+        o2 = self.S2.origin
 
-        r_ = r[:, :-1] / np.tile(r[2:3, :-1], (3, 1))
-        q_ = q[:, :-1] / np.tile(q[2:3, :-1], (3, 1))
+        r1_ = self.UV_s1_idx[i]
+        q1_ = utils.ray2uv(self.A, q1)
 
-        E, mask = cv2.findEssentialMat(q_[0:2, :].T, r_[0:2, :].T, np.eye(3))
+        E, mask = cv2.findEssentialMat(q1_.T, r1_.T, self.A)
 
         if self.is_5points_true:
             R_ini = self.cMs_idx[i, 0:3, 0:3]
             t_ini = self.cMs_idx[i, 0:3, 3:4]
         else:
             points, R_ini, t_ini, mask_pose = cv2.recoverPose(
-                E, q_[0:2, :].T, r_[0:2, :].T, np.eye(3))
+                E, q1_.T, r1_.T, self.A)
 
         # t_ini = np.sqrt(np.sum(t * t)) * t_ini.reshape(-1)
         if self.is_scale_true:
@@ -193,8 +225,8 @@ class Simulator():
             s_true = np.linalg.norm(self.cMs_idx[i, 0:3, 3:4], ord=2)
             t_ini = s_true / s_ini * t_ini
         else:
-            c = np.cross(r[:, -1], R_ini @ q[:, -1])
-            s = -(c @ (R_ini @ o[:, -1])) / (c @ t_ini)
+            c = np.cross(r2[:, 0], R_ini @ q2[:, 0])  # todo spot2が複数要素の場合に対応
+            s = -(c @ (R_ini @ o2[:, 0])) / (c @ t_ini[:, 0])
             t_ini = s * t_ini
 
         T_ini = np.eye(4)
@@ -202,6 +234,9 @@ class Simulator():
         T_ini[0:3, 3:4] = t_ini
 
         if self.is_bundle:
+            r = np.hstack([r1, r2])
+            o = np.hstack([o1, o2])
+            q = np.hstack([q1, q2])
             T_est = utils.bundle_adjustment(T_ini, r, o, q)
         else:
             T_est = T_ini
@@ -398,46 +433,10 @@ class Simulator():
 
     def run(self):
         self.set_base_motion()
-        self.set_spotlaser()
-        self.set_ringlaser()
+        self.set_rendered_points()
         self.set_used_index()
         self.select_used_M()
         self.generate_2dpoints()
         self.estimate_pose()
         self.set_ring_normals()
         self.calculate_3dpoints()
-
-###################################
-# sample of simulator execution
-###################################
-# simulator_params = {\
-#     "A": np.eye(3), \
-#     "n_spot": 7, \
-#     "n_ring": 100, \
-#     "base_motion": range(0, 4000, 10), \
-#     "cylinder_radius": 2500, \
-#     "spotlaser_offset": [50, 50, 1000], \
-#     "ringlaser_offset": [0, 0, 1500], \
-#     "is_ring_with_camera": True, \
-#     "camera_loop": range(6), \
-#     "spot_loop": range(250, 300, 5), \
-#     "round_threshold": 0.00001, \
-#     "is_bundle": False, \
-#     "is_5points_true": False, \
-#     "is_scale_true": False, \
-# }
-
-
-# S = Simulator()
-# S.set_params(**simulator_params)
-# S.set_base_motion()
-# S.set_spotlaser()
-# S.set_ringlaser()
-# S.set_used_index()
-# S.select_used_M()
-# S.generate_2dpoints()
-# S.estimate_pose()
-# S.set_ring_normals()
-# S.calculate_3dpoints()
-# S.show_3dpoints()
-# print()
