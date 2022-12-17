@@ -1,5 +1,6 @@
 from scipy import optimize
 from scipy.spatial.transform import Rotation
+from matplotlib import pyplot as plt
 import numpy as np
 
 
@@ -152,3 +153,9 @@ def uv2ray(A, uv):
     invA = np.linalg.inv(A)
     p = vec2homo(uv)
     return invA @ p
+
+
+def plot3(P):
+    fig = plt.figure(dpi=100)
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(P[0, :], P[1, :], P[2, :], color="r")
