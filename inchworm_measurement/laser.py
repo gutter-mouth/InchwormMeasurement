@@ -12,7 +12,7 @@ class Laser:
     def transform(self, M):  # M[4][4]
         R = M[0:3, 0:3]
         origin = utils.homogeneous_transform(M, self.origin)
-        direction = R @ self.direction
+        direction = R @ self.direction.copy()
         return [origin, direction]
 
     def ray_trace_cylinder(self, origin, direction, params):
@@ -20,10 +20,10 @@ class Laser:
         [dx, dy] = direction[:2, :]
         [ox, oy] = origin[:2, :]
         a = dx ** 2 + dy ** 2
-        b = - dx * ox - dy * oy
-        c = (dx ** 2 + dy ** 2) * radius ** 2 + 2 * dx * dy * \
-            ox * oy - (dx ** 2) * (oy ** 2) - (dy ** 2) * (ox ** 2)
-        s = (b + np.sqrt(c)) / a
+        b = 2 * (dx * ox + dy * oy)
+        c = ox**2 + oy**2 - radius ** 2
+
+        s = (-b + np.sqrt(b**2-4*a*c)) / (2*a)
         return origin + s * direction
 
     def dataset_generate(self, M, params):  # M[n,4,4]
