@@ -70,9 +70,9 @@ class Simulator():
     def get_default_laser_spot2(self):
         # spot laser for scale estimation
         origin2 = np.array(
-            [[200, 0, 1000]]).T
+            [[1000, 0, 0]]).T
         direction2 = np.array(
-            [[1, 1, 0]]).T
+            [[0, 1, 0]]).T
         S2 = Laser(origin2, direction2)
         return S2
 
