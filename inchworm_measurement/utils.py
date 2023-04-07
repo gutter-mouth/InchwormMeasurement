@@ -2,6 +2,8 @@ from scipy import optimize
 from scipy.spatial.transform import Rotation
 from matplotlib import pyplot as plt
 import numpy as np
+from scipy.spatial.transform import Rotation
+import cv2
 
 
 def bundle_adjustment(M_ini, r, o, q):
@@ -96,31 +98,8 @@ def M_inv(M):
     return invM
 
 
-def homogeneous_transform(M, p):
-    p_ = vec2homo(p)
-    q_ = M @ p_
-    q = homo2vec(q_)
-    return q
-
-
-def triangulate(M, r, o, q):  # P1 = s1 * r, P2 = s2 * q + o, P1 = M @ P2
-    n = r.shape[1]
-    R = M[0:3, 0:3]
-    t = M[0:3, 3:4]
-    P1 = np.zeros((3, n))
-    for i in range(n):
-        r_ = r[:, i : i + 1]
-        q_ = q[:, i : i + 1]
-        o_ = o[:, i : i + 1]
-
-        A = np.hstack([r_, -R @ q_])
-        b = R @ o_ + t
-        A_ = A.T @ A
-        b_ = A.T @ b
-        S = np.linalg.inv(A_) @ b_
-        # S = np.linalg.lstsq(A, b)
-        P1[:, i] = S[0][0] * r[:, i]
-    return P1
+def homogeneous_transform(M, P):
+    return homo2vec(M @ vec2homo(P))
 
 
 def homo2vec(P):  # [a, b, c, d] -> [a/d, b/c, c/d]
@@ -176,19 +155,55 @@ def plot3(P):
     ax = fig.add_subplot(111, projection="3d")
     ax.plot(P[0, :], P[1, :], P[2, :], color="r")
 
-def three_points_algorithm(c1_P_dir, c1_t_c2):
+
+def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
+    n = c1_P_dir.shape[1]
+    R = c1_M_c2[0:3, 0:3]
+    t = c1_M_c2[0:3, 3:4]
+    c1_P = np.zeros((3, n))
+    c2_P = np.zeros((3, n))
+    for i in range(n):
+        r1 = c1_P_dir[:, i : i + 1]
+        r2 = c2_P_dir[:, i : i + 1]
+
+        A = np.hstack([r1, -R @ r2])
+        b = t
+        AA = A.T @ A
+        bb = A.T @ b
+        S = np.linalg.inv(AA) @ bb
+        c1_P[:, i] = S[0, 0] * r1.flatten()
+        c2_P[:, i] = S[1, 0] * r2.flatten()
+    return [c1_P, c2_P]
+
+def sfm_by_five_points(c1_P_dir, c2_P_dir):
+    A = np.eye(3)
+
+    c1_UV = ray2uv(A, c1_P_dir)
+    c2_UV = ray2uv(A, c2_P_dir)
+
+    E, mask = cv2.findEssentialMat(c1_UV.T, c2_UV.T, A)
+    _, R, t, _ = cv2.recoverPose(E, c1_UV.T, c2_UV.T, A)
+
+    c1_M_c2 = np.eye(4)
+    c1_M_c2[0:3, 0:3] = R.T
+    c1_M_c2[0:3, 3:4] = -R.T @ t
+    [c1_P, c2_P] = triangulate(c1_M_c2, c1_P_dir, c2_P_dir)
+    return [c1_P, c2_P, c1_M_c2]
+
+
+def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
     c2_P_dir = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
     # C1からの方向ベクトルと並進ベクトルからスケールを決定する
     a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
     d = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
     g = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
-    b = -np.dot(c1_P_dir[:, 0], c1_t_c2[:,0])
-    e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:,0])
-    i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:,0])
+    b = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
+    e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
+    i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
     c = e
     f = i
     h = b
-    z = np.dot(c1_t_c2[:,0], c1_t_c2[:,0])
+    z = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
 
     A = a * f * i - b * d * i - c * f * g + d * g * z
     B = (
@@ -204,15 +219,18 @@ def three_points_algorithm(c1_P_dir, c1_t_c2):
     C = a * z * z - b * e * z - c * h * z + e * h * z
     x_a = (-B + np.sqrt(B * B - 4 * A * C)) / (2 * A)
     x_b = (-B - np.sqrt(B * B - 4 * A * C)) / (2 * A)
-    
+
     # 不適な解の除外
     q3 = np.array([x_a, x_b])
-    q1 = -1*(i *q3+z)/(g*q3+h)
-    q2 = -1*(f *q3+z)/(d*q3+e)
-    c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir 
+    q1 = -1 * (i * q3 + z) / (g * q3 + h)
+    q2 = -1 * (f * q3 + z) / (d * q3 + e)
+    c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
     c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
     c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
-    Q = c1_P - t
+    Q = c1_P - c1_t_c2
     c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
-
-    return [c1_P, c1_R_c2]
+    c1_M_c2 = np.eye(4)
+    c1_M_c2[0:3, 0:3] = c1_R_c2
+    c1_M_c2[0:3, 3:4] = c1_t_c2
+    c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
+    return [c1_P, c2_P, c1_M_c2]
