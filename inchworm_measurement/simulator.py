@@ -1,6 +1,9 @@
 from distutils.log import error
 import cv2
 import numpy as np
+import copy
+from sklearn.neighbors import NearestNeighbors
+from scipy import optimize
 
 from attrdict import AttrDict
 from matplotlib import pyplot as plt
@@ -11,78 +14,31 @@ from .laser import Laser
 
 
 class Simulator:
-    def __init__(self):
-
-        params = {
-            "A": np.eye(3),
-            "LSP": self.get_default_laser_spot1(),
-            "LSS": self.get_default_laser_spot2(),
-            "LR": self.get_default_laser_ring(),
-            "cylinder_radius": 2500,
-            "base_motion": np.array(
-                [[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 10 * i], [0, 0, 0, 1]] for i in range(100)]
-            ),
-            "spotlaser_offset": np.array(
-                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1000], [0, 0, 0, 1]]
-            ),
-            "ringlaser_offset": np.array(
-                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1500], [0, 0, 0, 1]]
-            ),
-            "is_ring_with_camera": True,
-            "idx_length": 100,
-            "idx_period": 5,
-            "round_threshold": 0.00001,
-            "is_three_points": True,
-            "is_bundle": False,
-            "is_5points_true": False,
-            "is_scale_true": False,
-        }
-        self.set_params(**params)
-
-    def set_params(self, **params):
-        for key in params:
-            setattr(self, key, params[key])
-
-    def get_idx(length, period):
-        camera_idx = []
-        spot_idx = []
-        for i in length:
-            for j in period:
-                camera_idx.append(i + j)
-                spot_idx.append(i)
-
-    def get_default_laser_spot1(self):
-        # spot laser for posture estimation
-        n = 6
-        origin1 = np.zeros((3, n))
-        direction1 = np.array(
-            [[np.cos(i * np.pi / n * 2), np.sin(i * np.pi / n * 2), 1] for i in range(n)]
-        ).T
-        LSP = Laser(origin1, direction1)
-        return LSP
-
-    def get_default_laser_spot2(self):
-        # spot laser for scale estimation
-        origin2 = np.array([[1000, 0, 0]]).T
-        direction2 = np.array([[0, 1, 0]]).T
-        LSS = Laser(origin2, direction2)
-        return LSS
-
-    def get_default_laser_ring(self):
-        # ring laser for structured light
-        m = 100
-        origin3 = np.zeros((3, m))
-        direction3 = np.array(
-            [[np.cos(i * np.pi / m * 2), np.sin(i * np.pi / m * 2), 0] for i in range(m)]
-        ).T
-        LR = Laser(origin3, direction3)
-        return LR
+    def __init__(self, params):
+        self.A = params["A"]
+        self.spot_laser = params["spot_laser"]
+        self.ring_laser = params["ring_laser"]
+        self.cylinder_radius = params["cylinder_radius"]
+        self.base_motion = params["base_motion"]
+        self.spotlaser_offset = params["spotlaser_offset"]
+        self.ringlaser_offset = params["ringlaser_offset"]
+        self.is_ring_with_camera = params["is_ring_with_camera"]
+        self.idx_length = params["idx_length"]
+        self.idx_period = params["idx_period"]
+        self.round_threshold = params["round_threshold"]
+        self.is_three_points_algorithm = params["is_three_points_algorithm"]
+        self.is_bundle = params["is_bundle"]
+        self.is_5points_true = params["is_5points_true"]
+        self.is_scale_true = params["is_scale_true"]
+        
+        if self.is_three_points_algorithm and len(self.spot_laser.origin.T) != 3:
+            raise ValueError("Points of spot laser must be three when three points algorithm is used.")
+        
 
     def set_rendered_points(self):
         params = {"radius": self.cylinder_radius}
-        self.LSP.dataset_generate(self.wMs, params)
-        self.LSS.dataset_generate(self.wMs, params)
-        self.LR.dataset_generate(self.wMr, params)
+        self.spot_laser.dataset_generate(self.wMs, params)
+        self.ring_laser.dataset_generate(self.wMr, params)
 
     def set_base_motion(self):
         # set pose of camera, spot laser, and ring laser
@@ -145,141 +101,114 @@ class Simulator:
         self.cMs_idx = cMs_idx
 
     def generate_2dpoints(self):  # pick up indexed M, P
-        wP_lsp_idx = [self.LSP.P[idx] for idx in self.idx_s]
-        wP_lss_idx = [self.LSS.P[idx] for idx in self.idx_s]
-        wP_r_idx = [self.LR.P[idx] for idx in self.idx_r]
+        wP_lsp_idx = [self.spot_laser.P[idx] for idx in self.idx_s]
+        wP_r_idx = [self.ring_laser.P[idx] for idx in self.idx_r]
 
         UV_lsp_idx = utils.uv_generate(
             self.A, self.cMw_idx, wP_lsp_idx, round_threshold=self.round_threshold
-        )
-        UV_lss_idx = utils.uv_generate(
-            self.A, self.cMw_idx, wP_lss_idx, round_threshold=self.round_threshold
         )
         UV_r_idx = utils.uv_generate(
             self.A, self.cMw_idx, wP_r_idx, round_threshold=self.round_threshold
         )
 
         self.wP_lsp_idx = wP_lsp_idx
-        self.wP_lss_idx = wP_lss_idx
         self.wP_r_idx = wP_r_idx
         self.UV_lsp_idx = UV_lsp_idx
-        self.UV_lss_idx = UV_lss_idx
         self.UV_r_idx = UV_r_idx
 
     def estimate_pose(self):
         section = []
         group = []
-        for i, is_moved in enumerate(self.is_camera_moved):
-            if is_moved == 1:
-                group.append(i)
-            elif group:
+        for i in range(len(self.idx_c)):
+            if i != 0 and not self.is_camera_moved[i - 1]:
                 section.append(group)
                 group = []
+            group.append(i)
         if group:
             section.append(group)
 
         cMs_est_dir_batch = []
-        s_P_dir_batch = []
+        c_P_dir_batch = []
         for index_list in section:
-            cMs_est_dir, s_P_dir = self.estimate_pose_batch(index_list)
+            c1_P_batch, c2_P_batch, c1_M_c2_batch = self.estimate_pose_batch(
+                index_list, self.is_three_points_algorithm
+            )
+            c_P_dir_batch.append(c1_P_batch)
+            cMs_est_dir_batch.append(c1_M_c2_batch)
 
-    def estimate_pose_batch(self, index_list):
+        # スケール推定
+        scales = self.estimate_scale(cMs_est_dir_batch, c_P_dir_batch, self.cP_r_est)
+
+        # 結合
+        [cMs_est, wMc_est, wP_s_est] = self.join_batch(cMs_est_dir_batch, c_P_dir_batch, scales)
+        self.cMs_est = cMs_est
+        self.wMc_est = wMc_est
+        self.wP_s_est = wP_s_est
+
+    def estimate_pose_batch(self, index_list, is_three_points_algorithm):
         c1_P_batch = []
         c2_P_batch = []
         c1_M_c2_batch = []
-        for k in range(i, j):
+        for i in index_list:
             c_P_dir = utils.uv2ray(self.A, self.UV_lsp_idx[i])
-            s_P_dir = self.LSP.direction
-            [c1_P, c2_P, c1_M_c2] = utils.sfm_by_five_points(c_P_dir, s_P_dir)
-            s = c2_P[2, 0]  # 1点目のz座標が1となるように正規化
+            s_P_dir = self.spot_laser.direction
+            c_t_s_dir = self.cMs_idx[i][0:3, 3:4]
+            [c1_P, c2_P, c1_M_c2] = (
+                utils.sfm_by_orthogonal_three_points(c_P_dir, c_t_s_dir)
+                if is_three_points_algorithm
+                else utils.sfm_by_five_points(c_P_dir, s_P_dir)
+            )
+            s = np.linalg.norm(c2_P[:, 0])  # 1点目のノルムが1となるように正規化
             c1_P = c1_P / s
             c2_P = c2_P / s
             c1_M_c2[0:3, 3] = c1_M_c2[0:3, 3] / s
-            c1_P_batch.append(c1_P / s)
-            c2_P_batch.append(c2_P / s)
-            c1_M_c2_batch.append(c1_P / s)
+            c1_P_batch.append(c1_P)
+            c2_P_batch.append(c2_P)
+            c1_M_c2_batch.append(c1_M_c2)
 
         return [c1_P_batch, c2_P_batch, c1_M_c2_batch]
 
-    def estimate_pose_(self):
-        # estimate pose between camera and spot laser at the same time
-        section = []
-        group = []
-        for i, is_moved in enumerate(self.is_camera_moved):
-            if is_moved == 1:
-                group.append(i)
-            elif group:
-                section.append(group)
-                group = []
-        if group:
-            section.append(group)
+    def join_batch(self, cMs_dir_batch, c_P_dir_batch, scales):
+        cMs = []
+        wMc = []
+        wP = []
+        idx = 0
+        for i in range(len(cMs_dir_batch)):
+            for j in range(len(cMs_dir_batch[i])):
+                cMs.append(utils.M_scale(cMs_dir_batch[i][j], scales[i]))
+                if len(wMc) == 0:
+                    wMc.append(np.eye(4))
+                elif j == 0:
+                    wMc.append(wMc[idx - 1])
+                else:
+                    wMc.append(wMc[idx - 1] @ cMs[idx - 1] @ np.linalg.inv(cMs[idx]))
+                wP.append(utils.homogeneous_transform(wMc[idx], scales[i] * c_P_dir_batch[i][j]))
+                idx += 1
+        return [cMs, wMc, wP]
 
-        camera_stopped_index = [i for i, x in enumerate(self.is_camera_moved) if x == 0]
-        n = len(self.idx_c)
-        cMs_est = np.zeros((n, 4, 4))
-        cMs_ini = np.zeros((n, 4, 4))
+    def estimate_scale(self, cMs_dir_batch, cP_spot_dir_batch, cP_ring):
+        def scale_eval_func(scales, cMs_dir_batch, cP_spot_dir_batch, cP_ring):
+            [cMs, wMc, wP_spot] = self.join_batch(cMs_dir_batch, cP_spot_dir_batch, scales)
+            wP_ring = [utils.homogeneous_transform(M, P) for M, P in zip(wMc, cP_ring)]
+            X = np.hstack(wP_ring).T
+            Y = np.hstack(wP_spot).T
+            nn = NearestNeighbors(algorithm="kd_tree", metric="euclidean", n_jobs=1)
+            # Xの点群に対してインデックスを作る
+            nn.fit(X)
+            # YからXへの最近傍探索を行う
+            distances, indices = nn.kneighbors(Y)
+            # print(np.array([d[0] for d in distances]).sum())
+            return np.array([d[0] for d in distances])
 
-        for i in range(n):
-            # r = homogeneous_transform(cMw_idx[i], wP_s_idx[i])
-            [cMs_est[i, :, :], cMs_ini[i, :, :]] = self.estimate_pose_batch(i)
-
-        # connect cMs according to is_camera_moved
-        wMc_est = np.zeros((n, 4, 4))
-        wMc_est[0, :, :] = np.eye(4, 4)
-        for i in range(n - 1):
-            if self.is_camera_moved[i]:
-                # c_i_M_c_i+1
-                M_rel = cMs_est[i, :, :] @ np.linalg.inv(cMs_est[i + 1, :, :])
-                wMc_est[i + 1, :, :] = wMc_est[i, :, :] @ M_rel
-            else:
-                wMc_est[i + 1, :, :] = wMc_est[i, :, :]
-        self.wMc_est = wMc_est
-        self.cMs_est = cMs_est
-
-    # def estimate_pose_i(self, i):
-    #     # spot laser for posture estimation
-    #     r1 = utils.uv2ray(self.A, self.UV_lsp_idx[i])
-    #     # spot laser for scale estimation
-    #     r2 = utils.uv2ray(self.A, self.UV_lss_idx[i])
-    #     q1 = self.LSP.direction
-    #     q2 = self.LSS.direction
-    #     o1 = self.LSP.origin
-    #     o2 = self.LSS.origin
-
-    #     r1_ = self.UV_lsp_idx[i]
-    #     q1_ = utils.ray2uv(self.A, q1)
-
-    #     E, mask = cv2.findEssentialMat(q1_.T, r1_.T, self.A)
-
-    #     if self.is_5points_true:
-    #         R_ini = self.cMs_idx[i, 0:3, 0:3]
-    #         t_ini = self.cMs_idx[i, 0:3, 3:4]
-    #     else:
-    #         points, R_ini, t_ini, mask_pose = cv2.recoverPose(E, q1_.T, r1_.T, self.A)
-
-    #     # t_ini = np.sqrt(np.sum(t * t)) * t_ini.reshape(-1)
-    #     if self.is_scale_true:
-    #         s_ini = np.linalg.norm(t_ini, ord=2)
-    #         s_true = np.linalg.norm(self.cMs_idx[i, 0:3, 3:4], ord=2)
-    #         t_ini = s_true / s_ini * t_ini
-    #     else:
-    #         c = np.cross(r2[:, 0], R_ini @ q2[:, 0])  # todo spot2が複数要素の場合に対応
-    #         s = -(c @ (R_ini @ o2[:, 0])) / (c @ t_ini[:, 0])
-    #         t_ini = s * t_ini
-
-    #     T_ini = np.eye(4)
-    #     T_ini[0:3, 0:3] = R_ini
-    #     T_ini[0:3, 3:4] = t_ini
-
-    #     if self.is_bundle:
-    #         r = np.hstack([r1, r2])
-    #         o = np.hstack([o1, o2])
-    #         q = np.hstack([q1, q2])
-    #         T_est = utils.bundle_adjustment(T_ini, r, o, q)
-    #     else:
-    #         T_est = T_ini
-
-    #     return [T_est, T_ini]
+        scales_ini = np.ones((len(cMs_dir_batch)))
+        result = optimize.least_squares(
+            scale_eval_func,
+            scales_ini,
+            method="lm",
+            args=(cMs_dir_batch, cP_spot_dir_batch, cP_ring),
+        )
+        scales = result["x"]
+        return scales
 
     def set_ring_normals(self):
         # calculate normal of ring laser
@@ -301,22 +230,32 @@ class Simulator:
     def calculate_3dpoints(self):
         # calculate points irradiated by ring laser
         n = len(self.idx_c)
-        wP_r_est = []
         cP_r_est = []
-        wP_r_true = []
 
         for i in range(n):
             ray = utils.uv2ray(self.A, self.UV_r_idx[i])
             normal = self.normals[:, i : i + 1]
             cp = utils.light_section(ray, normal)
-            wp = utils.homogeneous_transform(self.wMc_est[i, :, :], cp)
-            cP_r_est.append(wp)
+            cP_r_est.append(cp)
+        self.cP_r_est = cP_r_est
+
+    def integrate_3dpoints(self):
+        # calculate points irradiated by ring laser
+        n = len(self.idx_c)
+        wP_r_est = []
+        wP_r_true = []
+        wP_s_true = []
+
+        for i in range(n):
+            cp = self.cP_r_est[i]
+            wp = utils.homogeneous_transform(self.wMc_est[i], cp)
             wP_r_est.append(wp)
-            wP_r_true.append(self.LR.P[self.idx_c[i]])  # ground truth
+            wP_r_true.append(self.ring_laser.P[self.idx_c[i]])  # ground truth
+            wP_s_true.append(self.spot_laser.P[self.idx_s[i]])  # ground truth
 
         self.wP_r_est = wP_r_est
-        self.cP_r_est = cP_r_est
         self.wP_r_true = wP_r_true
+        self.wP_s_true = wP_s_true
 
     def calc_error(self):
         # evaluation
@@ -397,35 +336,28 @@ class Simulator:
         ax2.scatter(range(n), e[4, :], color="g")
         ax2.scatter(range(n), e[5, :], color="b")
 
-    def show_result(self, save_name=""):
+    def show_result(self, xlim=[], ylim=[], zlim=[], frames=[], is_groundtruth=False, save_name=""):
         # visualizer estimated points
         fig = plt.figure(dpi=100)
         ax = fig.add_subplot(111, projection="3d")
-
         ax.set_xlabel("x", size=15, color="black")
         ax.set_ylabel("y", size=15, color="black")
         ax.set_zlabel("z", size=15, color="black")
+        if xlim:
+            ax.set_xlim(xlim)
+        if ylim:
+            ax.set_ylim(ylim)
+        if zlim:
+            ax.set_zlim(zlim)
 
-        for p in self.wP_r_est:
+        for i in frames if frames else range(len(self.idx_c)):
+            p = self.wP_r_true[i] if is_groundtruth else self.wP_r_est[i]
+            q = self.wP_s_true[i] if is_groundtruth else self.wP_s_est[i]
             ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
+            ax.scatter(q[0, :], q[1, :], q[2, :], color="r", marker="x", s=5)
 
         if save_name != "":
             plt.savefig(save_name, dpi=120)
-        plt.show()
-
-    def show_groundtruth(self):
-        # visualizer estimated points
-        fig = plt.figure(dpi=100)
-        ax = fig.add_subplot(111, projection="3d")
-
-        ax.set_xlabel("x", size=15, color="black")
-        ax.set_ylabel("y", size=15, color="black")
-        ax.set_zlabel("z", size=15, color="black")
-
-        for p in self.wP_r_true:
-            ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
-
-        # plt.savefig("3Dpathpatch.jpg", dpi=120)
         plt.show()
 
     def show_module(self, frames):
@@ -471,7 +403,8 @@ class Simulator:
         self.set_rendered_points()
         self.set_used_index()
         self.select_used_M()
-        self.generate_2dpoints()
-        self.estimate_pose()
         self.set_ring_normals()
+        self.generate_2dpoints()
         self.calculate_3dpoints()
+        self.estimate_pose()
+        self.integrate_3dpoints()

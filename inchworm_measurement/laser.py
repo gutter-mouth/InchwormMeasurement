@@ -4,6 +4,8 @@ import numpy as np
 
 class Laser:
     def __init__(self, origin, direction):
+        if origin.shape != direction.shape:            
+            raise ValueError("origin and direction must have the same dimension")
         self.origin = origin
         self.direction = direction
         self.M = None

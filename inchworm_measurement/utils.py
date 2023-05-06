@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from scipy.spatial.transform import Rotation
 import cv2
+import copy
 
 
 def bundle_adjustment(M_ini, r, o, q):
@@ -16,7 +17,7 @@ def bundle_adjustment(M_ini, r, o, q):
     # # estimation
     x0 = np.concatenate([rvec_ini, t_ini, d_ini])
     # x = optimize.leastsq(eval_func, x0, args=(r,o,q), ftol=1e-03)
-    x = optimize.leastsq(eval_func, x0, args=(r, o, q), ftol=1)
+    x = optimize.leastsq(eval_func, x0, args=(r, o, q), ftol=1e-03)
 
     rvec_est = x[0][0:3]
     t_est = x[0][3:6]
@@ -32,6 +33,27 @@ def pose_mat2vec(M):  # [[rx],[ry],[rz],[tx],[ty],[tz]]
     t = M[0:3, 3:4]
     r = Rotation.from_matrix(R).as_rotvec().reshape(-1, 1)
     return np.concatenate([r, t])
+
+
+def pose_split(
+    M_list, section_list
+):  # [w_M_0, ...w_M_i, ...] -> [..., [j-1_M_j,..., j-1_M_i-1], [i-1_M_i, ...], ...]
+    M_splited = []
+    for i in range(len(section_list)):
+        M_base = M_joined[section[i - 1][-1]] if i == 0 else np.eye(4)  # i-1_M_i
+        M_splited.append(
+            [np.linalg.inv(M_base) @ M_list[j] for j in section]
+        )  # i_M_j = inv(w_M_i) @ w_M_j
+    return M_splited
+
+
+def pose_join(M_list_list):
+    M_joined = []
+    for M_list in M_list_list:
+        M_base = M_joined[-1] if len(M_joined) > 0 else np.eye(4)  # w_M_i
+        for M in M_list:
+            M_joined.append(M_base @ M)  # w_M_j = w_M_i @ i_M_j
+    return M_joined
 
 
 def eval_func(x, r, o, q):
@@ -96,6 +118,12 @@ def M_inv(M):
     for i in range(n):
         invM[i, :, :] = np.linalg.inv(M[i, :, :])
     return invM
+
+
+def M_scale(M, s):
+    M_s = copy.deepcopy(M)
+    M_s[0:3, 3] = s * M[0:3, 3]
+    return M_s
 
 
 def homogeneous_transform(M, P):
@@ -175,6 +203,7 @@ def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
         c2_P[:, i] = S[1, 0] * r2.flatten()
     return [c1_P, c2_P]
 
+
 def sfm_by_five_points(c1_P_dir, c2_P_dir):
     A = np.eye(3)
 
@@ -224,6 +253,8 @@ def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
     q3 = np.array([x_a, x_b])
     q1 = -1 * (i * q3 + z) / (g * q3 + h)
     q2 = -1 * (f * q3 + z) / (d * q3 + e)
+    print( c1_P_dir)
+    print(np.array([[q1[0], q2[0], q3[0]]]))
     c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
     c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
     c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
