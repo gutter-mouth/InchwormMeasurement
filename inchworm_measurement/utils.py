@@ -253,8 +253,7 @@ def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
     q3 = np.array([x_a, x_b])
     q1 = -1 * (i * q3 + z) / (g * q3 + h)
     q2 = -1 * (f * q3 + z) / (d * q3 + e)
-    print( c1_P_dir)
-    print(np.array([[q1[0], q2[0], q3[0]]]))
+    
     c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
     c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
     c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
