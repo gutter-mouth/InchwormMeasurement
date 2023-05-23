@@ -30,6 +30,7 @@ class Simulator:
         self.is_bundle = params["is_bundle"]
         self.is_5points_true = params["is_5points_true"]
         self.is_scale_true = params["is_scale_true"]
+        self.name = params["name"]
         
         if self.is_three_points_algorithm and len(self.spot_laser.origin.T) != 3:
             raise ValueError("Points of spot laser must be three when three points algorithm is used.")
@@ -42,6 +43,8 @@ class Simulator:
 
     def set_base_motion(self):
         # set pose of camera, spot laser, and ring laser
+        if not (self.base_motion[0,:,:]==np.eye(4)).all():
+            raise ValueError("First pose of base motion must be identity matrix.")
         m = len(self.base_motion)
         wMc = self.base_motion
         wMs = np.array([wMc[i, :, :] @ self.spotlaser_offset for i in range(m)])
@@ -349,12 +352,17 @@ class Simulator:
             ax.set_ylim(ylim)
         if zlim:
             ax.set_zlim(zlim)
+            
+        
+        label = "Result of ground truth" if is_groundtruth else "Result of estimation"
+        ax.set_title(label,  y=-0.2)
 
         for i in frames if frames else range(len(self.idx_c)):
             p = self.wP_r_true[i] if is_groundtruth else self.wP_r_est[i]
             q = self.wP_s_true[i] if is_groundtruth else self.wP_s_est[i]
             ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
             ax.scatter(q[0, :], q[1, :], q[2, :], color="r", marker="x", s=5)
+
 
         if save_name != "":
             plt.savefig(save_name, dpi=120)
@@ -397,6 +405,21 @@ class Simulator:
             ax.plot(axis_z[0, :], axis_z[1, :], axis_z[2, :], color="b")
         # plt.savefig("3Dpathpatch.jpg", dpi=120)
         plt.show()
+    
+    def plot_pose(self):
+        pose_est = np.array([utils.pose_mat2vec(M) for M in self.wMc_est])
+        pose_true = np.array([utils.pose_mat2vec(M) for M in self.wMc_idx])
+        labels = ["Rotation x", "Rotation y", "Rotation z", "Translation x", "Translation y", "Translation z"]
+        for i, label in enumerate(labels):
+            est_y = pose_est[:, i]
+            true_y = pose_true[:, i]
+            plt.scatter(range(len(est_y)), est_y, label=label+" est", s=2)
+            plt.scatter(range(len(true_y)), true_y, label=label+" true", s=2)
+            plt.legend()        
+            plt.title(label,  y=-0.2)
+            plt.show()
+        # グラフを表示する
+
 
     def run(self):
         self.set_base_motion()
@@ -408,3 +431,4 @@ class Simulator:
         self.calculate_3dpoints()
         self.estimate_pose()
         self.integrate_3dpoints()
+        self.calc_error()
