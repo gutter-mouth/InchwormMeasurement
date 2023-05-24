@@ -1,9 +1,13 @@
 from . import utils
 import numpy as np
+import sympy as sp
+from typing import Any
 
+Vector_3D = np.ndarray[(None,3), np.dtype[np.float64]]
+Matrix_homo = np.ndarray[(None,4,4), np.dtype[np.float64]]
 
 class Laser:
-    def __init__(self, origin, direction):
+    def __init__(self, origin: Vector_3D, direction: Vector_3D):
         if origin.shape != direction.shape:            
             raise ValueError("origin and direction must have the same dimension")
         self.origin = origin
@@ -27,13 +31,31 @@ class Laser:
 
         s = (-b + np.sqrt(b**2-4*a*c)) / (2*a)
         return origin + s * direction
+    
+    def ray_trace(self, origin: Vector_3D, direction: Vector_3D, surface_functions:list[Any])->Vector_3D:
+        # 方向ベクトルと陰関数から半直線と曲面の方程式を作る
+        s = sp.symbols('s')
+        points = np.zeros(origin.shape)
+        for i in range(origin.shape[1]):
+            a, b, c = direction[:,i]
+            eq_list = [f(s*a, s*b, s*c) for f in surface_functions]
+            eq_list.append(s >= 0)
 
-    def dataset_generate(self, M, params):  # M[n,4,4]
+            sol = sp.solve(sp.solve(eq_list),s)
+
+            if sol:
+                points[:,i] = sol[0] * direction[:,i] + origin[:,i]
+            else:   
+                points[:,i] = [None, None, None]
+        return points
+
+    def dataset_generate(self, M: Matrix_homo, surface_functions:list[Any]):  # M[n,4,4]
         n = M.shape[0]
         P = []
         for i in range(n):
+            print(i)
             [origin, direction] = self.transform(M[i, :, :])
-            p = self.ray_trace_cylinder(origin, direction, params)
+            p = self.ray_trace(origin, direction, surface_functions)
             P.append(p)
         self.P = P
         self.M = M

@@ -18,7 +18,7 @@ class Simulator:
         self.A = params["A"]
         self.spot_laser = params["spot_laser"]
         self.ring_laser = params["ring_laser"]
-        self.cylinder_radius = params["cylinder_radius"]
+        self.surface_functions = params["surface_functions"]
         self.base_motion = params["base_motion"]
         self.spotlaser_offset = params["spotlaser_offset"]
         self.ringlaser_offset = params["ringlaser_offset"]
@@ -37,9 +37,8 @@ class Simulator:
         
 
     def set_rendered_points(self):
-        params = {"radius": self.cylinder_radius}
-        self.spot_laser.dataset_generate(self.wMs, params)
-        self.ring_laser.dataset_generate(self.wMr, params)
+        self.spot_laser.dataset_generate(self.wMs, self.surface_functions)
+        self.ring_laser.dataset_generate(self.wMr, self.surface_functions)
 
     def set_base_motion(self):
         # set pose of camera, spot laser, and ring laser
