@@ -2,6 +2,7 @@ from . import utils
 import numpy as np
 import sympy as sp
 from typing import Any
+import pickle
 
 Vector_3D = np.ndarray[(None,3), np.dtype[np.float64]]
 Matrix_homo = np.ndarray[(None,4,4), np.dtype[np.float64]]
@@ -40,7 +41,6 @@ class Laser:
             a, b, c = direction[:,i]
             eq_list = [f(s*a, s*b, s*c) for f in surface_functions_eq]
             ineq_list = [f(s*a, s*b, s*c) for f in surface_functions_ineq] + [s > 0]
-            
             sol_candidates = list(sp.nonlinsolve(eq_list, [s]))
             for j in range(len(sol_candidates)):
                 s_j = sol_candidates[j][0]
@@ -53,12 +53,23 @@ class Laser:
         return points
 
     def dataset_generate(self, M: Matrix_homo, surface_functions_eq:list[Any], surface_functions_ineq:list[Any]):  # M[n,4,4]
-        n = M.shape[0]
+        n = len(M)
         P = []
         for i in range(n):
             print(i)
-            [origin, direction] = self.transform(M[i, :, :])
+            [origin, direction] = self.transform(M[i])
             p = self.ray_trace(origin, direction, surface_functions_eq, surface_functions_ineq)
             P.append(p)
         self.P = P
         self.M = M
+
+    @staticmethod
+    def save(laser, name):
+        with open(name + ".pickle", mode="wb") as f:
+            pickle.dump(laser, f)
+    
+    @staticmethod
+    def load(name):
+        with open(name + ".pickle", mode="rb") as f:
+            return pickle.load(f)
+            
