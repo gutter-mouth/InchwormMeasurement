@@ -99,18 +99,18 @@ def M2normal(M):
     return s * n
 
 
-def uv_generate(A, cMw, wP, round_threshold=1):
+def uv_generate(A, wMc, wP, round_threshold=1):
     n = len(wP)
+    cMw = np.linalg.inv(wMc)
     UV = []
     for i in range(n):
-        p = homogeneous_transform(cMw[i, :, :], wP[i])
+        p = homogeneous_transform(cMw[i], wP[i])
         uv = ray2uv(A, p)
         if round_threshold > 0:
             uv = round_threshold * np.round(uv / round_threshold)
         UV.append(uv)
         # import ipdb; ipdb.set_trace()
     return UV
-
 
 def M_inv(M):
     n = M.shape[0]
