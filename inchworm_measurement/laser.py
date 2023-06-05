@@ -4,12 +4,10 @@ import sympy as sp
 from typing import Any
 import pickle
 
-Vector_3D = np.ndarray[(None,3), np.dtype[np.float64]]
-Matrix_homo = np.ndarray[(None,4,4), np.dtype[np.float64]]
 
 class Laser:
-    def __init__(self, origin: Vector_3D, direction: Vector_3D):
-        if origin.shape != direction.shape:            
+    def __init__(self, origin, direction):
+        if origin.shape != direction.shape:
             raise ValueError("origin and direction must have the same dimension")
         self.origin = origin
         self.direction = direction
@@ -32,44 +30,50 @@ class Laser:
 
         s = (-b + np.sqrt(b**2-4*a*c)) / (2*a)
         return origin + s * direction
-    
-    def ray_trace(self, origin: Vector_3D, direction: Vector_3D, surface_functions_eq:list[Any], surface_functions_ineq:list[Any])->Vector_3D:
+
+    def ray_trace(self, origin, direction, surface_functions):
         # 方向ベクトルと陰関数から半直線と曲面の方程式を作る
+        surface_functions_eq = surface_functions.get("eq")
+        surface_functions_ineq = surface_functions.get("ineq")
+        ineq_logic = surface_functions.get("ineq_logic")
         s = sp.symbols('s', real=True)
         points = np.zeros(origin.shape)
         for i in range(origin.shape[1]):
-            a, b, c = direction[:,i]
+            a, b, c = direction[:, i]
             eq_list = [f(s*a, s*b, s*c) for f in surface_functions_eq]
-            ineq_list = [f(s*a, s*b, s*c) for f in surface_functions_ineq] + [s > 0]
-            sol_candidates = list(sp.nonlinsolve(eq_list, [s]))
-            for j in range(len(sol_candidates)):
-                s_j = sol_candidates[j][0]
-                isValid = np.all([ineq.subs(s, s_j) for ineq in ineq_list])
-                if isValid:
-                    points[:,i] = s_j * direction[:,i] + origin[:,i]
+            ineq_list = [f(s*a, s*b, s*c) for f in surface_functions_ineq]
+
+            res = sp.nonlinsolve(eq_list, [s])
+            s_candidates = [s for s in list(sum(res, ())) if s > 0]
+
+            for s_j in s_candidates:
+                is_valid_list = [ineq.subs(s, s_j) for ineq in ineq_list]
+                is_valid = ineq_logic(is_valid_list)
+                if is_valid:
+                    points[:, i] = s_j * direction[:, i] + origin[:, i]
                     break
-                else:
-                    points[:,i] = [None, None, None]
+                points[:, i] = [None, None, None]
+        print(points)
         return points
 
-    def dataset_generate(self, M: Matrix_homo, surface_functions_eq:list[Any], surface_functions_ineq:list[Any]):  # M[n,4,4]
+    def dataset_generate(self, M, surface_functions):  # M[n,4,4]
+
         n = len(M)
         P = []
         for i in range(n):
             print(i)
             [origin, direction] = self.transform(M[i])
-            p = self.ray_trace(origin, direction, surface_functions_eq, surface_functions_ineq)
+            p = self.ray_trace(origin, direction, surface_functions)
             P.append(p)
         self.P = P
         self.M = M
 
-    @staticmethod
+    @ staticmethod
     def save(laser, name):
         with open(name + ".pickle", mode="wb") as f:
             pickle.dump(laser, f)
-    
-    @staticmethod
+
+    @ staticmethod
     def load(name):
         with open(name + ".pickle", mode="rb") as f:
             return pickle.load(f)
-            
