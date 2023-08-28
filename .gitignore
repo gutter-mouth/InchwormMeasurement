@@ -3,3 +3,4 @@
 *.pyc
 sandbox*.ipynb
 *.pickle
+*.csv

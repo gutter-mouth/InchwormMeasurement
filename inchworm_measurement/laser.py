@@ -36,24 +36,28 @@ class Laser:
         surface_functions_eq = surface_functions.get("eq")
         surface_functions_ineq = surface_functions.get("ineq")
         ineq_logic = surface_functions.get("ineq_logic")
-        s = sp.symbols('s', real=True)
-        points = np.zeros(origin.shape)
+        s = sp.symbols('s')
+        points = np.zeros((3, 0))
         for i in range(origin.shape[1]):
-            a, b, c = direction[:, i]
-            eq_list = [f(s*a, s*b, s*c) for f in surface_functions_eq]
-            ineq_list = [f(s*a, s*b, s*c) for f in surface_functions_ineq]
-
+            x, y, z = s * direction[:, i] + origin[:, i]
+            eq_list = [f(x, y, z) for f in surface_functions_eq]
             res = sp.nonlinsolve(eq_list, [s])
-            s_candidates = [s for s in list(sum(res, ())) if s > 0]
-
+            s_candidates = [s for s in list(sum(res, ())) if s in sp.S.Reals and s > 0]
             for s_j in s_candidates:
-                is_valid_list = [ineq.subs(s, s_j) for ineq in ineq_list]
+                x_j, y_j, z_j = s_j * direction[:, i] + origin[:, i]
+                is_valid_list = [ineq(x_j, y_j, z_j) for ineq in surface_functions_ineq]
                 is_valid = ineq_logic(is_valid_list)
                 if is_valid:
-                    points[:, i] = s_j * direction[:, i] + origin[:, i]
+                    point_i = s_j * direction[:, i:i+1] + origin[:, i:i+1]
+                    points = np.hstack([points, point_i])
                     break
-                points[:, i] = [None, None, None]
-        print(points)
+                elif s_j == s_candidates[-1]:
+                    # print(origin[:, i:i+1].T)
+                    # print(direction[:, i:i+1].T)
+                    # print(s_candidates)
+                    # for s_k in s_candidates:
+                    #     print(s_k * direction[:, i:i+1] + origin[:, i:i+1])
+                    print("no valid solution")
         return points
 
     def dataset_generate(self, M, surface_functions):  # M[n,4,4]
@@ -61,7 +65,6 @@ class Laser:
         n = len(M)
         P = []
         for i in range(n):
-            print(i)
             [origin, direction] = self.transform(M[i])
             p = self.ray_trace(origin, direction, surface_functions)
             P.append(p)

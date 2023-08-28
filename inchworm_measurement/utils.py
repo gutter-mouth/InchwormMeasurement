@@ -106,11 +106,13 @@ def uv_generate(A, wMc, wP, round_threshold=1):
     for i in range(n):
         p = homogeneous_transform(cMw[i], wP[i])
         uv = ray2uv(A, p)
-        if round_threshold > 0:
+        if round_threshold > 0 and p.shape[1] > 2:
+            uv = uv.astype(np.float64)
             uv = round_threshold * np.round(uv / round_threshold)
         UV.append(uv)
         # import ipdb; ipdb.set_trace()
     return UV
+
 
 def M_inv(M):
     n = M.shape[0]
@@ -132,7 +134,7 @@ def homogeneous_transform(M, P):
 
 def homo2vec(P):  # [a, b, c, d] -> [a/d, b/c, c/d]
     n = P.shape[0]
-    Q = P / np.tile(P[n - 1 : n, :], (n, 1))
+    Q = P / np.tile(P[n - 1: n, :], (n, 1))
     Q = Q[:-1, :]
     return Q
 
@@ -165,6 +167,14 @@ def skew(v):
     return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
 
+def vect2col(v):
+    return np.array(v).reshape(-1, 1)
+
+
+def vect2row(v):
+    return np.array(v).reshape(1, -1)
+
+
 def quadratic2linear(U, V):  # U E V = 0 -> P e = 0
     l = U.shape[1]
     m = U.shape[0]
@@ -191,8 +201,8 @@ def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
     c1_P = np.zeros((3, n))
     c2_P = np.zeros((3, n))
     for i in range(n):
-        r1 = c1_P_dir[:, i : i + 1]
-        r2 = c2_P_dir[:, i : i + 1]
+        r1 = c1_P_dir[:, i: i + 1]
+        r2 = c2_P_dir[:, i: i + 1]
 
         A = np.hstack([r1, -R @ r2])
         b = t
@@ -204,63 +214,133 @@ def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
     return [c1_P, c2_P]
 
 
-def sfm_by_five_points(c1_P_dir, c2_P_dir):
-    A = np.eye(3)
+# def sfm_by_five_points(c1_P_dir, c2_P_dir):
+#     A = np.eye(3)
 
-    c1_UV = ray2uv(A, c1_P_dir)
-    c2_UV = ray2uv(A, c2_P_dir)
+#     c1_UV = ray2uv(A, c1_P_dir)
+#     c2_UV = ray2uv(A, c2_P_dir)
 
-    E, mask = cv2.findEssentialMat(c1_UV.T, c2_UV.T, A)
-    _, R, t, _ = cv2.recoverPose(E, c1_UV.T, c2_UV.T, A)
+#     E, mask = cv2.findEssentialMat(c1_UV.T, c2_UV.T, A)
+#     _, R, t, _ = cv2.recoverPose(E, c1_UV.T, c2_UV.T, A)
 
-    c1_M_c2 = np.eye(4)
-    c1_M_c2[0:3, 0:3] = R.T
-    c1_M_c2[0:3, 3:4] = -R.T @ t
-    [c1_P, c2_P] = triangulate(c1_M_c2, c1_P_dir, c2_P_dir)
-    return [c1_P, c2_P, c1_M_c2]
+#     c1_M_c2 = np.eye(4)
+#     c1_M_c2[0:3, 0:3] = R.T
+#     c1_M_c2[0:3, 3:4] = -R.T @ t
+#     [c1_P, c2_P] = triangulate(c1_M_c2, c1_P_dir, c2_P_dir)
+#     return [c1_P, c2_P, c1_M_c2]
 
 
 def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
+    # print(c1_P_dir, c1_t_c2)
+    # c2_P_dir = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
+    # # C1からの方向ベクトルと並進ベクトルからスケールを決定する
+    # a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
+    # d = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
+    # g = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
+    # b = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
+    # e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
+    # i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
+    # c = e
+    # f = i
+    # h = b
+    # z = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
+
+    # print(a, b, c, d, e, f, g, h, i, z)
+
+    # A = a * f * i - b * d * i - c * f * g + d * g * z
+    # B = (
+    #     a * f * z
+    #     + a * i * z
+    #     - b * e * i
+    #     - b * d * z
+    #     - c * g * z
+    #     - c * f * h
+    #     + d * h * z
+    #     + e * g * z
+    # )
+    # C = a * z * z - b * e * z - c * h * z + e * h * z
+    # x_a = (-B + np.sqrt(B * B - 4 * A * C)) / (2 * A)
+    # x_b = (-B - np.sqrt(B * B - 4 * A * C)) / (2 * A)
+
+    # # 不適な解の除外
+    # q3 = np.array([x_a, x_b])
+    # q1 = -1 * (i * q3 + z) / (g * q3 + h)
+    # q2 = -1 * (f * q3 + z) / (d * q3 + e)
+
+    # c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
+    # c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
+    # c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
+    # Q = c1_P - c1_t_c2
+    # c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
+    # c1_M_c2 = np.eye(4)
+    # c1_M_c2[0:3, 0:3] = c1_R_c2
+    # c1_M_c2[0:3, 3:4] = c1_t_c2
+    # print(c1_M_c2)
+    # c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
+    # return [c1_P, c2_P, c1_M_c2]
+
     c2_P_dir = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
     # C1からの方向ベクトルと並進ベクトルからスケールを決定する
     a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
-    d = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
-    g = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
-    b = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
+    b = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
+    c = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
+    d = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
     e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
-    i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
-    c = e
-    f = i
-    h = b
-    z = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
+    f = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
+    g = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
 
-    A = a * f * i - b * d * i - c * f * g + d * g * z
-    B = (
-        a * f * z
-        + a * i * z
-        - b * e * i
-        - b * d * z
-        - c * g * z
-        - c * f * h
-        + d * h * z
-        + e * g * z
-    )
-    C = a * z * z - b * e * z - c * h * z + e * h * z
-    x_a = (-B + np.sqrt(B * B - 4 * A * C)) / (2 * A)
-    x_b = (-B - np.sqrt(B * B - 4 * A * C)) / (2 * A)
+    A = np.array([
+        [a, 0, 0, d, e, 0],
+        [0, b, 0, 0, e, f],
+        [0, 0, c, d, 0, f],
+        [-a*c*e, b*c*e, b*c*d-a*c*f, -a*c*g, 0, b*c*g],
+        [a*c*e-a*b*d, -a*b*f, a*c*f, a*c*g, -a*b*g, 0],
+        [a*b*d, a*b*f-b*c*e, -b*c*d, 0, a*b*g, -b*c*g],
+    ])
+    b = -np.array([[g, g, g, 0, 0, 0]]).T
 
-    # 不適な解の除外
-    q3 = np.array([x_a, x_b])
-    q1 = -1 * (i * q3 + z) / (g * q3 + h)
-    q2 = -1 * (f * q3 + z) / (d * q3 + e)
-    
-    c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
-    c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
-    c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
+    x = np.linalg.solve(A, b)
+    print(np.linalg.inv(A))
+
+    [_, _, _, q1, q2, q3] = x
+    c1_P = np.array([[q1, q2, q3]]) * c1_P_dir
     Q = c1_P - c1_t_c2
     c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
     c1_M_c2 = np.eye(4)
     c1_M_c2[0:3, 0:3] = c1_R_c2
     c1_M_c2[0:3, 3:4] = c1_t_c2
-    c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
-    return [c1_P, c2_P, c1_M_c2]
+    return [c1_P, c1_R_c2]
+
+
+def plot_pose(M_list, axis_length=1):
+    fig = plt.figure(dpi=100)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_xlabel("x", size=15, color="black")
+    ax.set_ylabel("z", size=15, color="black")
+    ax.set_zlabel("y", size=15, color="black")
+
+    color_list = ["r", "g", "b"]
+    for M in M_list:
+        o = M[0:3, 3]
+        for i in range(3):
+            p = o + axis_length * M[0:3, i]
+            P = np.array([o, p]).T
+            ax.plot(P[0], P[2], P[1], color=color_list[i])
+
+    ax.set_aspect('equal')
+    ax.invert_zaxis()
+    plt.show()
+
+
+def plot_points(P):
+    fig = plt.figure(dpi=100)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_xlabel("x", size=15, color="black")
+    ax.set_ylabel("z", size=15, color="black")
+    ax.set_zlabel("y", size=15, color="black")
+
+    ax.scatter(P[0], P[2], P[1], s=1, color="r")
+
+    ax.set_aspect('equal')
+    ax.invert_zaxis()
+    plt.show()

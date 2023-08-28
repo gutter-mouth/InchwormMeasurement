@@ -17,13 +17,11 @@ class Simulator:
         self.idx_length = params["idx_length"]
         self.idx_period = params["idx_period"]
         self.round_threshold = params["round_threshold"]
-        self.is_three_points_algorithm = params["is_three_points_algorithm"]
         self.is_bundle = params["is_bundle"]
-        self.is_5points_true = params["is_5points_true"]
         self.is_scale_true = params["is_scale_true"]
         self.name = params["name"]
 
-        if self.is_three_points_algorithm and len(self.spot_laser.origin.T) != 3:
+        if len(self.spot_laser.origin.T) != 3:
             raise ValueError("Points of spot laser must be three when three points algorithm is used.")
 
     @staticmethod
@@ -66,7 +64,7 @@ class Simulator:
         return P
 
     @staticmethod
-    def estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring, A, is_camera_moved, is_three_points_algorithm=True):
+    def estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring, A, is_camera_moved):
         section = []
         group = [0]
         for i in range(len(is_camera_moved)):
@@ -82,7 +80,7 @@ class Simulator:
         c_P_dir_batch = []
         for index_list in section:
             c1_P_batch, c2_P_batch, c1_M_c2_batch = Simulator.estimate_pose_batch(
-                UV_spot, UV_spot_origin, spot_params, index_list, A, is_three_points_algorithm
+                UV_spot, UV_spot_origin, spot_params, index_list, A
             )
             c_P_dir_batch.append(c1_P_batch)
             cMs_est_dir_batch.append(c1_M_c2_batch)
@@ -95,7 +93,7 @@ class Simulator:
         return cMs_est, wMc_est, wP_spot_est
 
     @staticmethod
-    def estimate_pose_batch(UV_spot, UV_spot_origin, spot_params, index_list, A, is_three_points_algorithm):
+    def estimate_pose_batch(UV_spot, UV_spot_origin, spot_params, index_list, A):
         c1_P_batch = []
         c2_P_batch = []
         c1_M_c2_batch = []
@@ -103,11 +101,8 @@ class Simulator:
             c_P_dir = utils.uv2ray(A, UV_spot[i])
             s_P_dir = spot_params["direction"]
             c_t_s_dir = utils.uv2ray(A, UV_spot_origin[i])
-            [c1_P, c2_P, c1_M_c2] = (
-                utils.sfm_by_orthogonal_three_points(c_P_dir, c_t_s_dir)
-                if is_three_points_algorithm
-                else utils.sfm_by_five_points(c_P_dir, s_P_dir)
-            )
+            [c1_P, c2_P, c1_M_c2] = utils.sfm_by_orthogonal_three_points(c_P_dir, c_t_s_dir)
+
             s = np.linalg.norm(c2_P[:, 0])  # 1点目のノルムが1となるように正規化
             c1_P = c1_P / s
             c2_P = c2_P / s
@@ -254,13 +249,13 @@ class Simulator:
     #     ax2.scatter(range(n), e[4, :], color="g")
     #     ax2.scatter(range(n), e[5, :], color="b")
 
-    def show_result(self, xlim=[], ylim=[], zlim=[], frames=[], is_groundtruth=False, save_name=""):
+    def show_result(self, xlim=[], ylim=[], zlim=[], frames=[], is_groundtruth=False):
         # visualizer estimated points
         fig = plt.figure(dpi=100)
         ax = fig.add_subplot(111, projection="3d")
         ax.set_xlabel("x", size=15, color="black")
-        ax.set_ylabel("y", size=15, color="black")
-        ax.set_zlabel("z", size=15, color="black")
+        ax.set_ylabel("z", size=15, color="black")
+        ax.set_zlabel("y", size=15, color="black")
         if xlim:
             ax.set_xlim(xlim)
         if ylim:
@@ -271,16 +266,28 @@ class Simulator:
         label = "Result of ground truth" if is_groundtruth else "Result of estimation"
         ax.set_title(label,  y=-0.2)
 
-        for i in frames if frames else range(len(self.wP_ring_est)):
+        n = len(self.wP_ring_true) if is_groundtruth else len(self.wP_ring_est)
+
+        for i in frames if frames else range(n):
             p = self.wP_ring_true[i] if is_groundtruth else self.wP_ring_est[i]
             q = self.wP_spot_true[i] if is_groundtruth else self.wP_spot_est[i]
-            ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
-            ax.scatter(q[0, :], q[1, :], q[2, :], color="r", marker="x", s=5)
 
-        if save_name != "":
-            plt.savefig(save_name, dpi=120)
+            if p.shape[1] > 0:
+                ax.scatter(p[0], p[2], p[1], color="g", marker=".", s=1)
+            if q.shape[1] > 0:
+                ax.scatter(q[0], q[2], q[1], color="r", marker="x", s=1)
+        ax.set_aspect('equal')
+        ax.invert_zaxis()
         plt.show()
 
+        # p_list = self.wP_ring_true if is_groundtruth else self.wP_ring_est
+        # q_list = self.wP_spot_true if is_groundtruth else self.wP_spot_est
+        # p = np.hstack(p_list)
+        # q = np.hstack(q_list)
+
+        # ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
+        # ax.scatter(q[0, :], q[1, :], q[2, :], color="r", marker="x", s=5)
+        # plt.show()
     # def show_module(self, frames):
     #     # show modules in frames
     #     fig = plt.figure(dpi=100)
@@ -333,7 +340,7 @@ class Simulator:
             plt.show()
 
     def run_preprocess(self):
-        spot_laser, ring_laser, idx_length, idx_period, cMr, A = self.spot_laser, self.ring_laser, self.idx_length, self.idx_period, self.cMr, self.A
+        spot_laser, ring_laser, idx_length, idx_period, cMr, A, round_threshold = self.spot_laser, self.ring_laser, self.idx_length, self.idx_period, self.cMr, self.A, self.round_threshold
 
         idx_camera, idx_spot, is_camera_moved = Simulator.generate_idx(idx_length, idx_period)
         wP_spot_true = [spot_laser.P[idx] for idx in idx_spot]
@@ -341,29 +348,29 @@ class Simulator:
         wMs_true = [spot_laser.M[idx] for idx in idx_spot]
         wMc_true = [ring_laser.M[idx] @ np.linalg.inv(cMr) for idx in idx_camera]
         wP_spot_origin = [wMs[0:3, 3:4] for wMs in wMs_true]
-        UV_spot_origin = Simulator.generate_2d_points(wP_spot_origin, wMc_true, A)
-        UV_spot = Simulator.generate_2d_points(wP_spot_true, wMc_true, A)
-        UV_ring = Simulator.generate_2d_points(wP_ring_true, wMc_true, A)
+        UV_spot_origin = Simulator.generate_2d_points(wP_spot_origin, wMc_true, A, round_threshold=round_threshold)
+        UV_spot = Simulator.generate_2d_points(wP_spot_true, wMc_true, A, round_threshold=round_threshold)
+        UV_ring = Simulator.generate_2d_points(wP_ring_true, wMc_true, A, round_threshold=round_threshold)
         normal = utils.M2normal(cMr)
         spot_params = {"direction": spot_laser.direction, "origin": spot_laser.origin}
 
         [self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved] = [UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved]
 
     def run_measurement(self):
-        [A, is_three_points_algorithm, UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved] = [self.A, self.is_three_points_algorithm, self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved]
+        [A, UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved] = [self.A, self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved]
 
         cP_ring_est = Simulator.calculate_3dpoints(UV_ring, normal, A)
-        cMs_est, wMc_est, wP_spot_est = Simulator.estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring_est, A, is_camera_moved, is_three_points_algorithm)
+        cMs_est, wMc_est, wP_spot_est = Simulator.estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring_est, A, is_camera_moved)
         print(len(wMc_true), len(cP_ring_est))
         wP_ring_est = Simulator.integrate_3dpoints(cP_ring_est, wMc_est)
 
         [self.wMc_est, self.cMs_est, self.wP_spot_est, self.wP_ring_est, self.cP_ring_est] = [wMc_est, cMs_est, wP_spot_est, wP_ring_est, cP_ring_est]
 
     def run_evaluate(self):
-        [A, is_three_points_algorithm, UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved] = [self.A, self.is_three_points_algorithm, self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved]
+        [A, UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved] = [self.A, self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved]
 
         cP_ring_est = Simulator.calculate_3dpoints(UV_ring, normal, A)
-        cMs_est, wMc_est, wP_spot_est = Simulator.estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring_est, A, is_camera_moved, is_three_points_algorithm)
+        cMs_est, wMc_est, wP_spot_est = Simulator.estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring_est, A, is_camera_moved)
         print(len(wMc_true), len(cP_ring_est))
         wP_ring_est = Simulator.integrate_3dpoints(cP_ring_est, wMc_est)
 
