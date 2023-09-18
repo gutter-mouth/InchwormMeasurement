@@ -14,8 +14,10 @@ class Simulator:
         self.spot_laser = params["spot_laser"]
         self.ring_laser = params["ring_laser"]
         self.cMr = params["cMr"]
-        self.idx_length = params["idx_length"]
-        self.idx_period = params["idx_period"]
+        # self.idx_length = params["idx_length"]
+        # self.idx_period = params["idx_period"]
+        self.idx_camera = params["idx_camera"]
+        self.idx_spot = params["idx_spot"]
         self.round_threshold = params["round_threshold"]
         self.is_bundle = params["is_bundle"]
         self.is_scale_true = params["is_scale_true"]
@@ -25,20 +27,29 @@ class Simulator:
             raise ValueError("Points of spot laser must be three when three points algorithm is used.")
 
     @staticmethod
-    def generate_idx(length, period):
+    def generate_idx(length, period, offset=0):
         idx_camera = []
         idx_spot = []
         is_camera_moved = []
         for i in range(0, length, period):
             for j in range(period + 1):
                 idx_camera.append(i + j)
-                idx_spot.append(i)
+                idx_spot.append(i+offset)
+        return idx_camera, idx_spot
+
+    @staticmethod
+    def generate_is_camera_moved(idx_camera, idx_spot):
+        if (len(idx_camera) != len(idx_spot)):
+            raise Exception("Length of idx_camera and idx_spot must be same.")
+        is_camera_moved = []
         for i in range(len(idx_camera) - 1):
+            if idx_camera[i] != idx_camera[i + 1] and idx_spot[i] != idx_spot[i + 1]:
+                raise Exception("One of idx_camera and idx_spot must be same.")
             if idx_camera[i] == idx_camera[i + 1]:
                 is_camera_moved.append(0)
             else:
                 is_camera_moved.append(1)
-        return idx_camera, idx_spot, is_camera_moved
+        return is_camera_moved
 
     @staticmethod
     def filter_used_laser(laser, idx):
@@ -340,9 +351,9 @@ class Simulator:
             plt.show()
 
     def run_preprocess(self):
-        spot_laser, ring_laser, idx_length, idx_period, cMr, A, round_threshold = self.spot_laser, self.ring_laser, self.idx_length, self.idx_period, self.cMr, self.A, self.round_threshold
+        spot_laser, ring_laser, idx_camera, idx_spot, cMr, A, round_threshold = self.spot_laser, self.ring_laser, self.idx_camera, self.idx_spot, self.cMr, self.A, self.round_threshold
 
-        idx_camera, idx_spot, is_camera_moved = Simulator.generate_idx(idx_length, idx_period)
+        is_camera_moved = Simulator.generate_is_camera_moved(idx_camera, idx_spot)
         wP_spot_true = [spot_laser.P[idx] for idx in idx_spot]
         wP_ring_true = [ring_laser.P[idx] for idx in idx_camera]
         wMs_true = [spot_laser.M[idx] for idx in idx_spot]
@@ -353,6 +364,9 @@ class Simulator:
         UV_ring = Simulator.generate_2d_points(wP_ring_true, wMc_true, A, round_threshold=round_threshold)
         normal = utils.M2normal(cMr)
         spot_params = {"direction": spot_laser.direction, "origin": spot_laser.origin}
+        print("--- Preprocess ---")
+        print(wMs_true[0], wP_spot_true[0])
+        print("--- Preprocess ---")
 
         [self.UV_spot_origin, self.wP_spot_true, self.wP_ring_true, self.wMs_true, self.wMc_true, self.UV_spot, self.UV_ring, self.normal, self.spot_params, self.is_camera_moved] = [UV_spot_origin, wP_spot_true, wP_ring_true, wMs_true, wMc_true, UV_spot, UV_ring, normal, spot_params, is_camera_moved]
 

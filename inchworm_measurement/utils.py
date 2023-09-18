@@ -1,3 +1,4 @@
+import pretty_errors
 from scipy import optimize
 from scipy.spatial.transform import Rotation
 from matplotlib import pyplot as plt
@@ -26,6 +27,19 @@ def bundle_adjustment(M_ini, r, o, q):
     M_est[0:3, 0:3] = R_est
     M_est[0:3, 3] = t_est
     return M_est
+
+
+def pose_M2Rt(M):
+    R = M[0:3, 0:3]
+    t = M[0:3, 3:4]
+    return [R, t]
+
+
+def pose_Rt2M(R, t):
+    M = np.eye(4)
+    M[0:3, 0:3] = R
+    M[0:3, 3:4] = t
+    return M
 
 
 def pose_mat2vec(M):  # [[rx],[ry],[rz],[tx],[ty],[tz]]
@@ -151,6 +165,7 @@ def vec2normalized(P):  # [a, b, c] -> [a, b, c]/norm([a,b,c])
 
 
 def ray2uv(A, P):
+    print(A, P)
     p = A @ P
     p = homo2vec(p)
     return p
@@ -230,88 +245,6 @@ def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
 #     return [c1_P, c2_P, c1_M_c2]
 
 
-def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
-    # print(c1_P_dir, c1_t_c2)
-    # c2_P_dir = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
-    # # C1からの方向ベクトルと並進ベクトルからスケールを決定する
-    # a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
-    # d = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
-    # g = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
-    # b = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
-    # e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
-    # i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
-    # c = e
-    # f = i
-    # h = b
-    # z = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
-
-    # print(a, b, c, d, e, f, g, h, i, z)
-
-    # A = a * f * i - b * d * i - c * f * g + d * g * z
-    # B = (
-    #     a * f * z
-    #     + a * i * z
-    #     - b * e * i
-    #     - b * d * z
-    #     - c * g * z
-    #     - c * f * h
-    #     + d * h * z
-    #     + e * g * z
-    # )
-    # C = a * z * z - b * e * z - c * h * z + e * h * z
-    # x_a = (-B + np.sqrt(B * B - 4 * A * C)) / (2 * A)
-    # x_b = (-B - np.sqrt(B * B - 4 * A * C)) / (2 * A)
-
-    # # 不適な解の除外
-    # q3 = np.array([x_a, x_b])
-    # q1 = -1 * (i * q3 + z) / (g * q3 + h)
-    # q2 = -1 * (f * q3 + z) / (d * q3 + e)
-
-    # c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
-    # c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
-    # c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
-    # Q = c1_P - c1_t_c2
-    # c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
-    # c1_M_c2 = np.eye(4)
-    # c1_M_c2[0:3, 0:3] = c1_R_c2
-    # c1_M_c2[0:3, 3:4] = c1_t_c2
-    # print(c1_M_c2)
-    # c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
-    # return [c1_P, c2_P, c1_M_c2]
-
-    c2_P_dir = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
-    # C1からの方向ベクトルと並進ベクトルからスケールを決定する
-    a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
-    b = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
-    c = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
-    d = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
-    e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
-    f = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
-    g = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
-
-    A = np.array([
-        [a, 0, 0, d, e, 0],
-        [0, b, 0, 0, e, f],
-        [0, 0, c, d, 0, f],
-        [-a*c*e, b*c*e, b*c*d-a*c*f, -a*c*g, 0, b*c*g],
-        [a*c*e-a*b*d, -a*b*f, a*c*f, a*c*g, -a*b*g, 0],
-        [a*b*d, a*b*f-b*c*e, -b*c*d, 0, a*b*g, -b*c*g],
-    ])
-    b = -np.array([[g, g, g, 0, 0, 0]]).T
-
-    x = np.linalg.solve(A, b)
-    print(np.linalg.inv(A))
-
-    [_, _, _, q1, q2, q3] = x
-    c1_P = np.array([[q1, q2, q3]]) * c1_P_dir
-    Q = c1_P - c1_t_c2
-    c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
-    c1_M_c2 = np.eye(4)
-    c1_M_c2[0:3, 0:3] = c1_R_c2
-    c1_M_c2[0:3, 3:4] = c1_t_c2
-    return [c1_P, c1_R_c2]
-
-
 def plot_pose(M_list, axis_length=1):
     fig = plt.figure(dpi=100)
     ax = fig.add_subplot(111, projection="3d")
@@ -344,3 +277,185 @@ def plot_points(P):
     ax.set_aspect('equal')
     ax.invert_zaxis()
     plt.show()
+
+
+def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
+    print(c1_P_dir)
+    print(c1_t_c2)
+    s = np.linalg.norm(c1_t_c2[:, 0])
+    c1_t_c2 = c1_t_c2 / s
+    p1xt = np.cross(c1_P_dir[:, 0], c1_t_c2[:, 0])
+    p2xt = np.cross(c1_P_dir[:, 1], c1_t_c2[:, 0])
+    p3xt = np.cross(c1_P_dir[:, 2], c1_t_c2[:, 0])
+    print(np.linalg.norm(np.cross(p1xt, p2xt)), np.linalg.norm(np.cross(p2xt, p3xt)), np.linalg.norm(np.cross(p3xt, p1xt)))
+    if (np.linalg.norm(np.cross(p1xt, p2xt)) == 0 or np.linalg.norm(np.cross(p2xt, p3xt)) == 0 or np.linalg.norm(np.cross(p3xt, p1xt)) == 0):
+        raise Exception("invalid input pi x t // pj x t")
+
+    # C1からの方向ベクトルと並進ベクトルからスケールを決定する
+    a = np.dot(c1_P_dir[:, 0], c1_P_dir[:, 1])
+    b = np.dot(c1_P_dir[:, 1], c1_P_dir[:, 2])
+    c = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
+    d = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
+    e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
+    f = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
+    g = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
+
+    Q_candiate = []
+
+    print("a,b,c,d,e,f,g", a, b, c, d, e, f, g)
+
+    if len(Q_candiate) == 0:
+        # q1についての2次方程式を解く(cx+f)(Ax^2+Bx+C) = 0
+        A = b*d*d - c*e*d + c*a*g - f*a*d
+        B = 2*(b*d*g - e*f*d)
+        C = b*g*g - e*f*g
+
+        print("cfABC", c, f, A, B, C)
+        print("B * B - 4 * A * C", B * B, - 4 * A * C)
+        if (c != 0 or f != 0) and (A != 0 or B != 0 or C != 0):  # (cx+f)(Ax^2+Bx+C) = 0 が自明でない場合
+            x = []
+            if A != 0 and B * B - 4 * A * C >= 0:
+                x.append((-B + np.sqrt(B * B - 4 * A * C)) / (2 * A))
+                x.append((-B - np.sqrt(B * B - 4 * A * C)) / (2 * A))
+            elif B != 0:
+                x.append(-C/B)
+            if c != 0:
+                x.append(-f/c)
+            print("q1", x)
+            x = list(set(x))  # 重複を削除
+            for q1 in x:
+                print("a, q1, e, c, q1, f:", a, q1, e, c, q1, f)
+                print(a*q1 + e, c*q1 + f)
+                if (a*q1 + e != 0 and c*q1 + f != 0):
+                    q2 = -(d*q1 + g)/(a*q1 + e)
+                    q3 = -(d*q1 + g)/(c*q1 + f)
+                    Q_candiate.append(np.array([q1, q2, q3]))
+                elif (a*q1 + e != 0):
+                    q2 = -(d*q1 + g)/(a*q1 + e)
+                    if (b*q2 + f != 0):
+                        q3 = -(e*q2 + g)/(b*q2 + f)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+                elif (c*q1 + f != 0):
+                    q3 = -(d*q1 + g)/(c*q1 + f)
+                    if (b*q3 + e != 0):
+                        q2 = -(f*q3 + g)/(b*q3 + e)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+
+    if len(Q_candiate) == 0:
+        # q2についての2次方程式を解く(ax+d)(Ax^2+Bx+C) = 0
+        A = c*e*e - a*f*e + a*b*g - d*b*e
+        B = 2*(c*e*g - f*d*e)
+        C = c*g*g - f*d*g
+        if (a != 0 or d != 0) and (A != 0 or B != 0 or C != 0):  # (ax+d)(Ax^2+Bx+C) = 0 が自明でない場合
+            x = []
+            if A != 0 and B * B - 4 * A * C >= 0:
+                x.append((-B + np.sqrt(B * B - 4 * A * C)) / (2 * A))
+                x.append((-B - np.sqrt(B * B - 4 * A * C)) / (2 * A))
+            elif B != 0:
+                x.append(-C/B)
+            if a != 0:
+                x.append(-d/a)
+            x = list(set(x))  # 重複を削除
+            print("q2", x)
+            for q2 in x:
+                if (b*q2 + f != 0 and a*q2 + d != 0):
+                    q3 = -(e*q2 + g)/(b*q2 + f)
+                    q1 = -(e*q2 + g)/(a*q2 + d)
+                    Q_candiate.append(np.array([q1, q2, q3]))
+                elif (b*q2 + f != 0):
+                    q3 = -(e*q2 + g)/(b*q2 + f)
+                    if (c*q3 + d != 0):
+                        q1 = -(f*q3 + g)/(c*q3 + d)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+                elif (a*q2 + d != 0):
+                    q1 = -(e*q2 + g)/(a*q2 + d)
+                    if (c*q1 + f != 0):
+                        q3 = -(d*q1 + g)/(c*q1 + f)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+
+    if len(Q_candiate) == 0:
+        # q3についての2次方程式を解く(bx+e)(Ax^2+Bx+C) = 0
+        A = a*f*f - b*d*f + b*c*g - e*c*f
+        B = 2*(a*f*g - d*e*f)
+        C = a*g*g - d*e*g
+        if (b != 0 or e != 0) and (A != 0 or B != 0 or C != 0):  # (bx+e)(Ax^2+Bx+C) = 0 が自明でない場合
+            x = []
+            if A != 0 and B * B - 4 * A * C >= 0:
+                x.append((-B + np.sqrt(B * B - 4 * A * C)) / (2 * A))
+                x.append((-B - np.sqrt(B * B - 4 * A * C)) / (2 * A))
+            elif B != 0:
+                x.append(-C/B)
+            if b != 0:
+                x.append(-e/b)
+            x = list(set(x))  # 重複を削除
+            print("q3", x)
+            for q3 in x:
+                if (c*q3 + d != 0 and b*q3 + e != 0):
+                    q1 = -(f*q3 + g)/(c*q3 + d)
+                    q2 = -(f*q3 + g)/(b*q3 + e)
+                    Q_candiate.append(np.array([q1, q2, q3]))
+                elif (c*q3 + d != 0):
+                    q1 = -(f*q3 + g)/(c*q3 + d)
+                    if (a*q1 + e != 0):
+                        q2 = -(d*q1 + g)/(a*q1 + e)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+                elif (b*q3 + e != 0):
+                    q2 = -(f*q3 + g)/(b*q3 + e)
+                    if (a*q1 + e != 0):
+                        q1 = -(e*q2 + g)/(a*q2 + d)
+                        Q_candiate.append(np.array([q1, q2, q3]))
+
+    print("Q", Q_candiate)
+    score = []
+    result_candidate = []
+    for Q in Q_candiate:
+        c1_P = Q * c1_P_dir
+        print(c1_P)
+        c1_P_T = c1_P - c1_t_c2
+        # 十分性チェック
+        cos12 = np.abs(np.dot(c1_P_T[:, 0], c1_P_T[:, 1]) / (np.linalg.norm(c1_P_T[:, 0]) * np.linalg.norm(c1_P_T[:, 1])))
+        cos23 = np.abs(np.dot(c1_P_T[:, 1], c1_P_T[:, 2]) / (np.linalg.norm(c1_P_T[:, 1]) * np.linalg.norm(c1_P_T[:, 2])))
+        cos31 = np.abs(np.dot(c1_P_T[:, 2], c1_P_T[:, 0]) / (np.linalg.norm(c1_P_T[:, 2]) * np.linalg.norm(c1_P_T[:, 0])))
+        score.append(cos12 + cos23 + cos31)
+
+    min_index = int(np.array(score).argmin())
+    c1_P = s * Q_candiate[min_index] * c1_P_dir
+    c1_P_T = c1_P - s * c1_t_c2
+    c1_R_c2 = c1_P_T / np.linalg.norm(c1_P_T, axis=0)
+    c1_M_c2 = pose_Rt2M(c1_R_c2, s * c1_t_c2)
+    c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
+    return [c1_P, c2_P, c1_M_c2]
+
+
+# R = Rotation.from_rotvec([0, 0, 0]).as_matrix()
+# t = np.array([[30, 0, 10]]).T
+# # R = np.eye(3)
+# # t = np.array([[0, 0, 1]]).T
+# T = np.vstack([np.hstack([R, t]), np.array([[0, 0, 0, 1]])])
+
+# p1 = np.array([[-1.0525725,   0.,          0.],
+#                [0.,         0.51283875, - 0.51283875],
+#                [1.,        1.,          1.]])
+# t = np.array([[0.],
+#               [0.],
+#               [500]])
+
+# p1 = np.array([[-1, 0, 0],
+#                [0., 1, -1],
+#                [1., 2, 2]])
+# t = np.array([[0.],
+#               [0.],
+#               [500]])
+
+
+# # print(T)
+# # p2 = np.array([[10, 0, 0], [0, 500, 0], [0, 0, 100]]).T
+# # p1 = utils.homogeneous_transform(T, p2)
+
+
+# [c1_p_est, c2_p_est, R_est] = sfm_by_orthogonal_three_points(p1, t)
+# # [c1_p_est, c2_p_est, R_est] = utils.sfm_by_orthogonal_three_points(p1, t)
+
+# print("c1_p_est", c1_p_est)
+# print("c2_p_est", c2_p_est)
+# print("R_est", R_est)
