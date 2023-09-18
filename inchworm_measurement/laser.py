@@ -7,11 +7,7 @@ import pickle
 
 class Laser:
     def __init__(self, origin, direction):
-<<<<<<< HEAD
-        if origin.shape != direction.shape:            
-=======
         if origin.shape != direction.shape:
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
             raise ValueError("origin and direction must have the same dimension")
         self.origin = origin
         self.direction = direction

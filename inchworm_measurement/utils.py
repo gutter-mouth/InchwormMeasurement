@@ -228,12 +228,6 @@ def triangulate(c1_M_c2, c1_P_dir, c2_P_dir):
         c2_P[:, i] = S[1, 0] * r2.flatten()
     return [c1_P, c2_P]
 
-<<<<<<< HEAD
-
-def sfm_by_five_points(c1_P_dir, c2_P_dir):
-    A = np.eye(3)
-=======
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
 
 # def sfm_by_five_points(c1_P_dir, c2_P_dir):
 #     A = np.eye(3)
@@ -303,43 +297,6 @@ def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
     c = np.dot(c1_P_dir[:, 2], c1_P_dir[:, 0])
     d = -np.dot(c1_P_dir[:, 0], c1_t_c2[:, 0])
     e = -np.dot(c1_P_dir[:, 1], c1_t_c2[:, 0])
-<<<<<<< HEAD
-    i = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
-    c = e
-    f = i
-    h = b
-    z = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
-
-    A = a * f * i - b * d * i - c * f * g + d * g * z
-    B = (
-        a * f * z
-        + a * i * z
-        - b * e * i
-        - b * d * z
-        - c * g * z
-        - c * f * h
-        + d * h * z
-        + e * g * z
-    )
-    C = a * z * z - b * e * z - c * h * z + e * h * z
-    x_a = (-B + np.sqrt(B * B - 4 * A * C)) / (2 * A)
-    x_b = (-B - np.sqrt(B * B - 4 * A * C)) / (2 * A)
-
-    # 不適な解の除外
-    q3 = np.array([x_a, x_b])
-    q1 = -1 * (i * q3 + z) / (g * q3 + h)
-    q2 = -1 * (f * q3 + z) / (d * q3 + e)
-    print( c1_P_dir)
-    print(np.array([[q1[0], q2[0], q3[0]]]))
-    c1_P_a = np.array([[q1[0], q2[0], q3[0]]]) * c1_P_dir
-    c1_P_b = np.array([[q1[1], q2[1], q3[1]]]) * c1_P_dir
-    c1_P = c1_P_a if q1[0] > 0 and q2[0] > 0 and q3[0] > 0 else c1_P_b
-    Q = c1_P - c1_t_c2
-    c1_R_c2 = Q / np.linalg.norm(Q, axis=0)
-    c1_M_c2 = np.eye(4)
-    c1_M_c2[0:3, 0:3] = c1_R_c2
-    c1_M_c2[0:3, 3:4] = c1_t_c2
-=======
     f = -np.dot(c1_P_dir[:, 2], c1_t_c2[:, 0])
     g = np.dot(c1_t_c2[:, 0], c1_t_c2[:, 0])
 
@@ -466,7 +423,6 @@ def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
     c1_P_T = c1_P - s * c1_t_c2
     c1_R_c2 = c1_P_T / np.linalg.norm(c1_P_T, axis=0)
     c1_M_c2 = pose_Rt2M(c1_R_c2, s * c1_t_c2)
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
     c2_P = homogeneous_transform(np.linalg.inv(c1_M_c2), c1_P)
     return [c1_P, c2_P, c1_M_c2]
 

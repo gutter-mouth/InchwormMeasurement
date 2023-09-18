@@ -1,8 +1,4 @@
 import numpy as np
-<<<<<<< HEAD
-import copy
-=======
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
 from sklearn.neighbors import NearestNeighbors
 from scipy import optimize
 
@@ -17,54 +13,6 @@ class Simulator:
         self.A = params["A"]
         self.spot_laser = params["spot_laser"]
         self.ring_laser = params["ring_laser"]
-<<<<<<< HEAD
-        self.cylinder_radius = params["cylinder_radius"]
-        self.base_motion = params["base_motion"]
-        self.spotlaser_offset = params["spotlaser_offset"]
-        self.ringlaser_offset = params["ringlaser_offset"]
-        self.is_ring_with_camera = params["is_ring_with_camera"]
-        self.idx_length = params["idx_length"]
-        self.idx_period = params["idx_period"]
-        self.round_threshold = params["round_threshold"]
-        self.is_three_points_algorithm = params["is_three_points_algorithm"]
-        self.is_bundle = params["is_bundle"]
-        self.is_5points_true = params["is_5points_true"]
-        self.is_scale_true = params["is_scale_true"]
-        
-        if self.is_three_points_algorithm and len(self.spot_laser.origin.T) != 3:
-            raise ValueError("Points of spot laser must be three when three points algorithm is used.")
-        
-
-    def set_rendered_points(self):
-        params = {"radius": self.cylinder_radius}
-        self.spot_laser.dataset_generate(self.wMs, params)
-        self.ring_laser.dataset_generate(self.wMr, params)
-
-    def set_base_motion(self):
-        # set pose of camera, spot laser, and ring laser
-        m = len(self.base_motion)
-        wMc = self.base_motion
-        wMs = np.array([wMc[i, :, :] @ self.spotlaser_offset for i in range(m)])
-        wMr = np.array([wMc[i, :, :] @ self.ringlaser_offset for i in range(m)])
-
-        if self.is_ring_with_camera:
-            xMr = np.linalg.inv(wMc[0, :, :]) @ wMr[0, :, :]
-        else:
-            xMr = np.linalg.inv(wMs[0, :, :]) @ wMr[0, :, :]
-
-        self.wMc = wMc
-        self.wMs = wMs
-        self.wMr = wMr
-        self.xMr = xMr
-
-    def set_used_index(self):
-        # set way of motion as a whole
-        length = self.idx_length
-        period = self.idx_period
-        idx_c = []
-        idx_s = []
-
-=======
         self.cMr = params["cMr"]
         # self.idx_length = params["idx_length"]
         # self.idx_period = params["idx_period"]
@@ -83,7 +31,6 @@ class Simulator:
         idx_camera = []
         idx_spot = []
         is_camera_moved = []
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         for i in range(0, length, period):
             for j in range(period + 1):
                 idx_camera.append(i + j)
@@ -110,23 +57,6 @@ class Simulator:
         laser.M = laser.M[idx]
         return laser
 
-<<<<<<< HEAD
-    def generate_2dpoints(self):  # pick up indexed M, P
-        wP_lsp_idx = [self.spot_laser.P[idx] for idx in self.idx_s]
-        wP_r_idx = [self.ring_laser.P[idx] for idx in self.idx_r]
-
-        UV_lsp_idx = utils.uv_generate(
-            self.A, self.cMw_idx, wP_lsp_idx, round_threshold=self.round_threshold
-        )
-        UV_r_idx = utils.uv_generate(
-            self.A, self.cMw_idx, wP_r_idx, round_threshold=self.round_threshold
-        )
-
-        self.wP_lsp_idx = wP_lsp_idx
-        self.wP_r_idx = wP_r_idx
-        self.UV_lsp_idx = UV_lsp_idx
-        self.UV_r_idx = UV_r_idx
-=======
     @staticmethod
     def generate_2d_points(points_3d, camera_pose, A, round_threshold=0.5):
         points_2d = utils.uv_generate(A, camera_pose, points_3d, round_threshold=round_threshold)
@@ -143,19 +73,10 @@ class Simulator:
             p = utils.light_section(ray, normal)
             P.append(p)
         return P
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
 
     @staticmethod
     def estimate_pose(UV_spot, UV_spot_origin, spot_params, cP_ring, A, is_camera_moved):
         section = []
-<<<<<<< HEAD
-        group = []
-        for i in range(len(self.idx_c)):
-            if i != 0 and not self.is_camera_moved[i - 1]:
-                section.append(group)
-                group = []
-            group.append(i)
-=======
         group = [0]
         for i in range(len(is_camera_moved)):
             if is_camera_moved[i]:
@@ -163,36 +84,19 @@ class Simulator:
             else:
                 section.append(group)
                 group = [i+1]
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         if group:
             section.append(group)
 
         cMs_est_dir_batch = []
         c_P_dir_batch = []
         for index_list in section:
-<<<<<<< HEAD
-            c1_P_batch, c2_P_batch, c1_M_c2_batch = self.estimate_pose_batch(
-                index_list, self.is_three_points_algorithm
-=======
             c1_P_batch, c2_P_batch, c1_M_c2_batch = Simulator.estimate_pose_batch(
                 UV_spot, UV_spot_origin, spot_params, index_list, A
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
             )
             c_P_dir_batch.append(c1_P_batch)
             cMs_est_dir_batch.append(c1_M_c2_batch)
 
         # スケール推定
-<<<<<<< HEAD
-        scales = self.estimate_scale(cMs_est_dir_batch, c_P_dir_batch, self.cP_r_est)
-
-        # 結合
-        [cMs_est, wMc_est, wP_s_est] = self.join_batch(cMs_est_dir_batch, c_P_dir_batch, scales)
-        self.cMs_est = cMs_est
-        self.wMc_est = wMc_est
-        self.wP_s_est = wP_s_est
-
-    def estimate_pose_batch(self, index_list, is_three_points_algorithm):
-=======
         scales = Simulator.estimate_scale(cMs_est_dir_batch, c_P_dir_batch, cP_ring)
 
         # 結合
@@ -201,27 +105,15 @@ class Simulator:
 
     @staticmethod
     def estimate_pose_batch(UV_spot, UV_spot_origin, spot_params, index_list, A):
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         c1_P_batch = []
         c2_P_batch = []
         c1_M_c2_batch = []
         for i in index_list:
-<<<<<<< HEAD
-            c_P_dir = utils.uv2ray(self.A, self.UV_lsp_idx[i])
-            s_P_dir = self.spot_laser.direction
-            c_t_s_dir = self.cMs_idx[i][0:3, 3:4]
-            [c1_P, c2_P, c1_M_c2] = (
-                utils.sfm_by_orthogonal_three_points(c_P_dir, c_t_s_dir)
-                if is_three_points_algorithm
-                else utils.sfm_by_five_points(c_P_dir, s_P_dir)
-            )
-=======
             c_P_dir = utils.uv2ray(A, UV_spot[i])
             s_P_dir = spot_params["direction"]
             c_t_s_dir = utils.uv2ray(A, UV_spot_origin[i])
             [c1_P, c2_P, c1_M_c2] = utils.sfm_by_orthogonal_three_points(c_P_dir, c_t_s_dir)
 
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
             s = np.linalg.norm(c2_P[:, 0])  # 1点目のノルムが1となるように正規化
             c1_P = c1_P / s
             c2_P = c2_P / s
@@ -232,12 +124,8 @@ class Simulator:
 
         return [c1_P_batch, c2_P_batch, c1_M_c2_batch]
 
-<<<<<<< HEAD
-    def join_batch(self, cMs_dir_batch, c_P_dir_batch, scales):
-=======
     @staticmethod
     def join_batch(cMs_dir_batch, c_P_dir_batch, scales):
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         cMs = []
         wMc = []
         wP = []
@@ -255,16 +143,10 @@ class Simulator:
                 idx += 1
         return [cMs, wMc, wP]
 
-<<<<<<< HEAD
-    def estimate_scale(self, cMs_dir_batch, cP_spot_dir_batch, cP_ring):
-        def scale_eval_func(scales, cMs_dir_batch, cP_spot_dir_batch, cP_ring):
-            [cMs, wMc, wP_spot] = self.join_batch(cMs_dir_batch, cP_spot_dir_batch, scales)
-=======
     @staticmethod
     def estimate_scale(cMs_dir_batch, cP_spot_dir_batch, cP_ring):
         def scale_eval_func(scales, cMs_dir_batch, cP_spot_dir_batch, cP_ring):
             [cMs, wMc, wP_spot] = Simulator.join_batch(cMs_dir_batch, cP_spot_dir_batch, scales)
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
             wP_ring = [utils.homogeneous_transform(M, P) for M, P in zip(wMc, cP_ring)]
             X = np.hstack(wP_ring).T
             Y = np.hstack(wP_spot).T
@@ -273,11 +155,7 @@ class Simulator:
             nn.fit(X)
             # YからXへの最近傍探索を行う
             distances, indices = nn.kneighbors(Y)
-<<<<<<< HEAD
-            # print(np.array([d[0] for d in distances]).sum())
-=======
 
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
             return np.array([d[0] for d in distances])
 
         scales_ini = np.ones((len(cMs_dir_batch)))
@@ -289,140 +167,10 @@ class Simulator:
         )
         scales = result["x"]
         return scales
-<<<<<<< HEAD
-
-    def set_ring_normals(self):
-        # calculate normal of ring laser
-        n = len(self.idx_c)
-        cMr_est = np.zeros((n, 4, 4))
-        normals = np.zeros((3, n))
-
-        for i in range(n):
-            if self.is_ring_with_camera:
-                cMr_i = self.xMr
-            else:
-                cMr_i = self.cMs_est[i, :, :] @ self.xMr
-            cMr_est[i, :, :] = cMr_i
-            normals[:, i] = utils.M2normal(cMr_i).reshape(-1)
-
-        self.cMr_est = cMr_est
-        self.normals = normals
-=======
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
 
     @staticmethod
     def integrate_3dpoints(cP_ring_est, wMc_est):
         # calculate points irradiated by ring laser
-<<<<<<< HEAD
-        n = len(self.idx_c)
-        cP_r_est = []
-
-        for i in range(n):
-            ray = utils.uv2ray(self.A, self.UV_r_idx[i])
-            normal = self.normals[:, i : i + 1]
-            cp = utils.light_section(ray, normal)
-            cP_r_est.append(cp)
-        self.cP_r_est = cP_r_est
-
-    def integrate_3dpoints(self):
-        # calculate points irradiated by ring laser
-        n = len(self.idx_c)
-        wP_r_est = []
-        wP_r_true = []
-        wP_s_true = []
-
-        for i in range(n):
-            cp = self.cP_r_est[i]
-            wp = utils.homogeneous_transform(self.wMc_est[i], cp)
-            wP_r_est.append(wp)
-            wP_r_true.append(self.ring_laser.P[self.idx_c[i]])  # ground truth
-            wP_s_true.append(self.spot_laser.P[self.idx_s[i]])  # ground truth
-
-        self.wP_r_est = wP_r_est
-        self.wP_r_true = wP_r_true
-        self.wP_s_true = wP_s_true
-
-    def calc_error(self):
-        # evaluation
-        n = len(self.idx_c)
-        error = 0
-        for i in range(n):
-            dp = self.wP_r_est[i] - self.wP_r_true[i]
-            m = dp.shape[1]
-            ei = 0
-            for j in range(m):
-                dpj = dp[:, j]
-                ej = np.sqrt(np.sum(dpj**2))
-                ei += ej
-            ei /= m
-            error += ei
-        error /= n
-        self.error = error
-
-    def calc_error_pose_adjacent(self):
-        # evaluation of pose error
-        n = len(self.idx_c)
-        error = []
-        for i in range(n - 1):
-            Pose_true = np.linalg.inv(self.wMc_idx[i]) @ self.wMc_idx[i + 1]  # c_i+1 M c_i
-            Pose_est = np.linalg.inv(self.wMc_est[i]) @ self.wMc_est[i + 1]
-            pose_error = utils.pose_mat2vec(Pose_est) - utils.pose_mat2vec(Pose_true)
-            error.append(pose_error)
-        self.error_pose_adjacent = np.array(error).T.reshape((6, -1))
-
-    def calc_error_pose_global(self):
-        # evaluation of pose error
-        n = len(self.idx_c)
-        error = []
-        for i in range(n):
-            Pose_true = self.wMc_idx[i]
-            Pose_est = self.wMc_est[i]
-            pose_error = utils.pose_mat2vec(Pose_est) - utils.pose_mat2vec(Pose_true)
-            error.append(pose_error)
-
-        self.error_pose_global = np.array(error).T.reshape((6, -1))
-
-    def show_error_pose_adjacent(self):
-        e = self.error_pose_adjacent
-
-        fig = plt.figure(figsize=(15, 5))
-        ax1 = fig.add_subplot(1, 2, 1)
-        ax2 = fig.add_subplot(1, 2, 2)
-
-        ax1.set_xlabel("index")
-        ax1.set_ylabel("Rotation Error [radian]")
-        ax1.scatter(e[0, :], color="r")
-        ax1.scatter(e[1, :], color="g")
-        ax1.scatter(e[2, :], color="b")
-
-        ax2.set_xlabel("index")
-        ax2.set_ylabel("Translation Error [mm]")
-        ax2.scatter(e[3, :], color="r")
-        ax2.scatter(e[4, :], color="g")
-        ax2.scatter(e[5, :], color="b")
-
-    def show_error_pose_global(self):
-        e = self.error_pose_global
-        n = e.shape[1]
-
-        fig = plt.figure(figsize=(15, 5))
-        ax1 = fig.add_subplot(1, 2, 1)
-        ax2 = fig.add_subplot(1, 2, 2)
-
-        ax1.set_xlabel("index")
-        ax1.set_ylabel("Rotation Error [radian]")
-        ax1.scatter(range(n), e[0, :], color="r")
-        ax1.scatter(range(n), e[1, :], color="g")
-        ax1.scatter(range(n), e[2, :], color="b")
-
-        ax2.set_xlabel("index")
-        ax2.set_ylabel("Translation Error [mm]")
-        ax2.scatter(range(n), e[3, :], color="r")
-        ax2.scatter(range(n), e[4, :], color="g")
-        ax2.scatter(range(n), e[5, :], color="b")
-
-    def show_result(self, xlim=[], ylim=[], zlim=[], frames=[], is_groundtruth=False, save_name=""):
-=======
         n = len(cP_ring_est)
         wP_ring_est = []
 
@@ -513,18 +261,12 @@ class Simulator:
     #     ax2.scatter(range(n), e[5, :], color="b")
 
     def show_result(self, xlim=[], ylim=[], zlim=[], frames=[], is_groundtruth=False):
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         # visualizer estimated points
         fig = plt.figure(dpi=100)
         ax = fig.add_subplot(111, projection="3d")
         ax.set_xlabel("x", size=15, color="black")
-<<<<<<< HEAD
-        ax.set_ylabel("y", size=15, color="black")
-        ax.set_zlabel("z", size=15, color="black")
-=======
         ax.set_ylabel("z", size=15, color="black")
         ax.set_zlabel("y", size=15, color="black")
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
         if xlim:
             ax.set_xlim(xlim)
         if ylim:
@@ -532,66 +274,6 @@ class Simulator:
         if zlim:
             ax.set_zlim(zlim)
 
-<<<<<<< HEAD
-        for i in frames if frames else range(len(self.idx_c)):
-            p = self.wP_r_true[i] if is_groundtruth else self.wP_r_est[i]
-            q = self.wP_s_true[i] if is_groundtruth else self.wP_s_est[i]
-            ax.scatter(p[0, :], p[1, :], p[2, :], color="g", marker=".", s=5)
-            ax.scatter(q[0, :], q[1, :], q[2, :], color="r", marker="x", s=5)
-
-        if save_name != "":
-            plt.savefig(save_name, dpi=120)
-        plt.show()
-
-    def show_module(self, frames):
-        # show modules in frames
-        fig = plt.figure(dpi=100)
-        ax = fig.add_subplot(111, projection="3d")
-
-        ax.set_xlabel("x", size=15, color="black")
-        ax.set_ylabel("y", size=15, color="black")
-        ax.set_zlabel("z", size=15, color="black")
-
-        for f in frames:
-            # camera axis
-            T = self.wMc_est[f]
-            rx = T[0:3, 0:1]
-            ry = T[0:3, 1:2]
-            rz = T[0:3, 2:3]
-            o = T[0:3, 3:4]
-            axis_x = np.hstack([o, o + rx])
-            axis_y = np.hstack([o, o + ry])
-            axis_z = np.hstack([o, o + rz])
-            ax.plot(axis_x[0, :], axis_x[1, :], axis_x[2, :], color="r")
-            ax.plot(axis_y[0, :], axis_y[1, :], axis_y[2, :], color="g")
-            ax.plot(axis_z[0, :], axis_z[1, :], axis_z[2, :], color="b")
-
-            # spot laser axis
-            S = self.wMc_est[f] @ self.cMs_est[f]
-            rx = S[0:3, 0:1]
-            ry = S[0:3, 1:2]
-            rz = S[0:3, 2:3]
-            o = S[0:3, 3:4]
-            axis_x = np.hstack([o, o + rx])
-            axis_y = np.hstack([o, o + ry])
-            axis_z = np.hstack([o, o + rz])
-            ax.plot(axis_x[0, :], axis_x[1, :], axis_x[2, :], color="r")
-            ax.plot(axis_y[0, :], axis_y[1, :], axis_y[2, :], color="g")
-            ax.plot(axis_z[0, :], axis_z[1, :], axis_z[2, :], color="b")
-        # plt.savefig("3Dpathpatch.jpg", dpi=120)
-        plt.show()
-
-    def run(self):
-        self.set_base_motion()
-        self.set_rendered_points()
-        self.set_used_index()
-        self.select_used_M()
-        self.set_ring_normals()
-        self.generate_2dpoints()
-        self.calculate_3dpoints()
-        self.estimate_pose()
-        self.integrate_3dpoints()
-=======
         label = "Result of ground truth" if is_groundtruth else "Result of estimation"
         ax.set_title(label,  y=-0.2)
 
@@ -914,4 +596,3 @@ class Simulator:
     #     self.estimate_pose()
     #     self.integrate_3dpoints()
     #     self.calc_error()
->>>>>>> ddd81b030f7e97fcb6622344c7288cc09ce470c9
