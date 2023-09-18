@@ -1,5 +1,4 @@
 *.png
 *.jpg
 *.pyc
-*.pickle
-*.csv
+sandbox*.ipynb
