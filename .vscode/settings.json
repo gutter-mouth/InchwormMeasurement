@@ -1,4 +1,4 @@
-{ 
+{
   "[python]": {
     "editor.tabSize": 4,
     "editor.formatOnSaveMode": "file",
@@ -8,5 +8,6 @@
       "source.fixAll.ruff": true,
       "source.organizeImports.ruff": true
     }
-  }
+  },
+  "black-formatter.args": ["--line-length", "200"]
 }
