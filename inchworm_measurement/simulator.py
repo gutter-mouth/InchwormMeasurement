@@ -210,15 +210,15 @@ class Simulator:
             ax.set_ylim(ylim)
         if zlim:
             ax.set_zlim(zlim)
-        frames = frames if frames else range(len(points_list[0]))
 
         for [points, color] in zip(points_list, color_list):
+            frames = frames if frames else range(len(points))
             for i in frames:
-                print(np.array(points[i]))
-                print(np.isnan(points[i]).any(axis=1))
-                ax.scatter(points[i][0], points[i][2], points[i][1], color=color, marker=".", s=1)
+                points_i = points[i].astype(np.float32)
+                ax.scatter(points_i[0], points_i[2], points_i[1], color=color, marker=".", s=1)
         ax.set_aspect("equal")
         ax.invert_zaxis()
+        plt.title(label, y=-0.2)
         plt.show()
 
     def run_preprocess(self):

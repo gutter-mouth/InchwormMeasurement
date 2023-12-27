@@ -43,7 +43,7 @@ def pose_Rt2M(R, t):
 def pose_mat2vec(M):  # [[rx],[ry],[rz],[tx],[ty],[tz]]
     R = M[0:3, 0:3]
     t = M[0:3, 3:4]
-    r = Rotation.from_matrix(R).as_rotvec().reshape(-1, 1)
+    r = Rotation.from_matrix(R).as_euler(seq="zxy", degrees=True).reshape(-1, 1)
     return np.concatenate([r, t])
 
 
@@ -273,6 +273,9 @@ def plot_points(P):
 
 
 def sfm_by_orthogonal_three_points(c1_P_dir, c1_t_c2):
+    c1_P_dir = c1_P_dir.astype(np.float64)
+    c1_P_dir = c1_P_dir.astype(np.float64)
+
     s = np.linalg.norm(c1_t_c2[:, 0]) * 2
     c1_t_c2 = c1_t_c2 / s
     p1xt = np.cross(c1_P_dir[:, 0], c1_t_c2[:, 0])
