@@ -1,8 +1,13 @@
 {
-  "python.linting.pylintEnabled": true,
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": false,
   "[python]": {
-    "editor.formatOnSave": true
-  }
+    "editor.tabSize": 4,
+    "editor.formatOnSaveMode": "file",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "black-formatter.args": ["--line-length", "200"]
 }
